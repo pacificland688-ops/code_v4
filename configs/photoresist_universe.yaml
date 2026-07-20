@@ -1,0 +1,235 @@
+# ===========================================================================
+# Photoresist Theme — Point-in-Time Stock Universe v2
+# ===========================================================================
+# Stock universe for the photoresist panic reversal research module.
+#
+# Principles:
+#   - Point-in-Time: effective_start / effective_end define when a stock
+#     belongs to the universe. Do NOT use stocks before effective_start.
+#   - Coarse layering (core / adjacent / mapping), NOT pseudo-precise scores.
+#   - source_type must be auditable and time-traceable.
+#   - Do NOT back-project current industry knowledge into historical data.
+#
+# Layers:
+#   core:      semiconductor photoresist explicitly confirmed → core basket
+#              (晶瑞电材, 南大光电, 彤程新材, 上海新阳)
+#   adjacent:  PCB/display photoresist, broad photosensitive materials
+#              → broad basket only, NOT core basket
+#   mapping:   semiconductor materials, silicon wafers, CMP, equipment,
+#              upstream mapping → sentiment observation only
+#
+# pit_confidence:
+#   high:   annual report / prospectus / official announcement with clear date
+#   medium: concept PIT data / industry classification with reasonable lag
+#   low:    post-hoc research report / current concept tags / manual recall
+#           → EXCLUDED from main backtest (core and broad baskets)
+# ===========================================================================
+
+universe:
+  name: photoresist_pit_v2
+  description: "光刻胶主题 PIT 股票池 v2 — 修正分层"
+  last_updated: "2026-07-05"
+  status: "FROZEN — do not change based on test results"
+
+  # ── Core: semiconductor photoresist explicitly confirmed ─────────────
+  # Only stocks with clear, auditable semiconductor photoresist business.
+  core:
+    - ts_code: "300655.SZ"
+      name: "晶瑞电材"
+      pool_type: core
+      effective_start: 20170101
+      effective_end: 20251231
+      source_type: annual_report
+      source_ref: "年报:半导体光刻胶+超净高纯试剂;i线/KrF光刻胶"
+      pit_confidence: high
+
+    - ts_code: "300346.SZ"
+      name: "南大光电"
+      pool_type: core
+      effective_start: 20170101
+      effective_end: 20251231
+      source_type: annual_report
+      source_ref: "年报:MO源+ArF光刻胶研发及产业化"
+      pit_confidence: high
+
+    - ts_code: "603650.SH"
+      name: "彤程新材"
+      pool_type: core
+      effective_start: 20200701
+      effective_end: 20251231
+      source_type: announcement
+      source_ref: "公告:2020年收购北京科华微电子(半导体光刻胶龙头)"
+      pit_confidence: high
+
+    - ts_code: "300236.SZ"
+      name: "上海新阳"
+      pool_type: core
+      effective_start: 20180101
+      effective_end: 20251231
+      source_type: annual_report
+      source_ref: "年报:半导体材料(光刻胶+电镀液+清洗液);KrF光刻胶"
+      pit_confidence: medium
+
+  # ── Adjacent: PCB/display photoresist, broad photosensitive ──────────
+  adjacent:
+    - ts_code: "300576.SZ"
+      name: "容大感光"
+      pool_type: adjacent
+      effective_start: 20170101
+      effective_end: 20251231
+      source_type: annual_report
+      source_ref: "年报:PCB光刻胶为主,半导体光刻胶占比小;以PCB感光油墨为核心"
+      pit_confidence: medium
+
+    - ts_code: "300398.SZ"
+      name: "飞凯材料"
+      pool_type: adjacent
+      effective_start: 20170101
+      effective_end: 20251231
+      source_type: annual_report
+      source_ref: "年报:显示面板光刻胶+紫外固化材料+电子化学品"
+      pit_confidence: high
+
+    - ts_code: "300537.SZ"
+      name: "广信材料"
+      pool_type: adjacent
+      effective_start: 20170101
+      effective_end: 20251231
+      source_type: annual_report
+      source_ref: "年报:PCB感光油墨+光刻胶+消费电子涂料"
+      pit_confidence: high
+
+    - ts_code: "300429.SZ"
+      name: "强力新材"
+      pool_type: adjacent
+      effective_start: 20170101
+      effective_end: 20251231
+      source_type: annual_report
+      source_ref: "年报:PCB光刻胶用光引发剂+光固化材料"
+      pit_confidence: medium
+
+    - ts_code: "002584.SZ"
+      name: "西陇科学"
+      pool_type: adjacent
+      effective_start: 20170101
+      effective_end: 20251231
+      source_type: annual_report
+      source_ref: "年报:电子化学品+光刻胶配套试剂(剥离液/显影液)"
+      pit_confidence: medium
+
+  # ── Mapping: semiconductor materials, silicon, CMP, equipment ────────
+  # Sentiment observation only — NOT in core or broad basket.
+  mapping:
+    - ts_code: "002409.SZ"
+      name: "雅克科技"
+      pool_type: mapping
+      effective_start: 20180101
+      effective_end: 20251231
+      source_type: annual_report
+      source_ref: "年报:半导体化学材料(前驱体/SOD);光刻胶通过收购切入,非主业"
+      pit_confidence: medium
+
+    - ts_code: "688019.SH"
+      name: "安集科技"
+      pool_type: mapping
+      effective_start: 20190722
+      effective_end: 20251231
+      source_type: annual_report
+      source_ref: "招股书/年报:CMP抛光液+光刻胶辅助去除剂;非光刻胶主产业链"
+      pit_confidence: medium
+
+    - ts_code: "688126.SH"
+      name: "沪硅产业"
+      pool_type: mapping
+      effective_start: 20200420
+      effective_end: 20251231
+      source_type: annual_report
+      source_ref: "招股书:半导体硅片(光刻胶上游基材,非光刻胶本身)"
+      pit_confidence: medium
+
+    - ts_code: "688233.SH"
+      name: "神工股份"
+      pool_type: mapping
+      effective_start: 20200221
+      effective_end: 20251231
+      source_type: annual_report
+      source_ref: "招股书:刻蚀用硅材料(光刻下游工艺,非光刻胶)"
+      pit_confidence: low
+
+    - ts_code: "300054.SZ"
+      name: "鼎龙股份"
+      pool_type: mapping
+      effective_start: 20180101
+      effective_end: 20251231
+      source_type: annual_report
+      source_ref: "年报:CMP抛光垫+半导体材料;打印耗材为主营"
+      pit_confidence: medium
+
+    - ts_code: "688012.SH"
+      name: "中微公司"
+      pool_type: mapping
+      effective_start: 20190722
+      effective_end: 20251231
+      source_type: annual_report
+      source_ref: "招股书:等离子体刻蚀设备(光刻下游工艺设备)"
+      pit_confidence: medium
+
+# ── Basket construction rules ───────────────────────────────────────────
+basket_rules:
+  core_basket:
+    description: "core 股票等权，单票权重上限 30%"
+    pool_types: [core]
+    min_pit_confidence: medium  # exclude 'low'
+    weight_scheme: equal_weight
+    max_single_weight: 0.30
+    min_components: 3
+
+  broad_basket:
+    description: "core + adjacent，core 权重优先，adjacent 降权"
+    pool_types: [core, adjacent]
+    min_pit_confidence: medium
+    weight_scheme: tiered
+    core_weight_multiplier: 2.0   # core weight = 2x adjacent weight
+    max_single_weight: 0.25
+    min_components: 3
+
+  mapping_sentiment_index:
+    description: "mapping 股票只做情绪观察，不作为事件主依据"
+    pool_types: [mapping]
+    min_pit_confidence: low  # includes all for observation
+    weight_scheme: equal_weight
+    research_only: true
+
+# ── Benchmark indices ────────────────────────────────────────────────────
+benchmarks:
+  market:
+    - code: "000300.SH"
+      name: "沪深300"
+    - code: "000985.CSI"
+      name: "中证全指"
+
+  growth:
+    - code: "399006.SZ"
+      name: "创业板指"
+
+  semiconductor:
+    - code: "931865.CSI"
+      name: "中证半导体产业指数"
+      primary: true  # primary comparison target
+
+# ── Eligibility filters (applied per stock at each date) ─────────────────
+eligibility:
+  min_list_days: 120                  # listed >= 120 trading days
+  min_daily_amount_20d: 1.0e8         # avg daily amount >= 1亿
+  amount_unit: thousand_cny           # prices.amount uses Tushare-style 千元
+  exclude_st: true                    # exclude ST/*ST
+  exclude_suspend: true               # exclude suspended stocks
+  exclude_limit_down_event: true      # exclude if limit-down on event day
+  exclude_consecutive_limit_down: true  # exclude if >=2 consecutive limit-down days
+  exclude_limit_up_entry: true        # exclude if limit-up on entry (can't buy)
+
+# ── Event clustering ─────────────────────────────────────────────────────
+event_clustering:
+  max_gap_trading_days: 5  # consecutive events within 5 trading days = same cluster
+
+# ===========================================================================

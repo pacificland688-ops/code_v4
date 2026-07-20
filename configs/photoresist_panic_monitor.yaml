@@ -1,0 +1,27 @@
+schema: photoresist_panic_monitor.v1
+status: research_only
+
+gate_id: primary_5d
+max_data_staleness_calendar_days: 3
+strict_universe_effective_end: true
+
+severity:
+  l2_absolute_return: -0.05
+  l3_absolute_return: -0.08
+  l4_absolute_return: -0.10
+  l3_percentile: 0.05
+  l4_percentile: 0.01
+  l4_breadth: 0.75
+  watch_percentile: 0.20
+
+reversal_eligible_regimes: [bull, neutral]
+blocked_regimes: [bear, unknown]
+
+historical_reference:
+  label: "在线首次触发、bull/neutral、t+1收盘、20日内收盘达到净收益5%"
+  sample_per_rule: 21
+  hit_rate_range: [0.6667, 0.7619]
+  warning: "样本有限，仅作历史参考；未命中样本存在约13%-19%的最差亏损。"
+
+outputs:
+  directory: outputs/live/photoresist_panic

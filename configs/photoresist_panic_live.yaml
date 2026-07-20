@@ -1,0 +1,144 @@
+# ===========================================================================
+# Photoresist Panic — Live Alert System Configuration (v1)
+# ===========================================================================
+# Online, close-of-day alert pipeline built on top of the FROZEN primary_5d
+# research signal. See docs/photoresist_panic_live_alert_system.md.
+#
+# FROZEN parameters are duplicated here for auditability only. The live
+# engine imports the gate math from the frozen research module
+# (scripts/validate_photoresist_panic_thresholds.build_threshold_gate) and
+# validates this block against configs/photoresist_panic_research.yaml at
+# startup — any drift is a hard startup failure, NOT a silent override.
+# ===========================================================================
+
+schema: photoresist_panic_live.v2
+status: research_only          # no auto-trading; TRADE_READY always false
+gate_version: primary_5d_frozen_v1
+
+basket_constraint_governance:
+  active_semantics: frozen_v1_with_infeasible_cap_audit
+  candidate_config: configs/photoresist_basket_constraints_v2_candidate.yaml
+  candidate_active: false
+
+# Until every P0 acceptance item of the gap-fix plan is verified, the system
+# stays research-only with the shadow acceptance clock disabled.
+system_mode:
+  research_only: true
+  shadow_enabled: false        # SHADOW_DISABLED until P0 acceptance passes
+  trade_ready: false           # hard constant in v1/v2
+
+frozen_gate:
+  gate_id: primary_5d
+  return_window_days: 5
+  absolute_threshold_pct: -5.0
+  quantile_window_days: 250
+  quantile_threshold_pct: 10.0
+  breadth_window_days: 5
+  breadth_threshold_pct: 50.0
+  identification: close_of_event_day
+  live_signal_day: first_trigger_day
+  earliest_execution: next_trading_day
+
+# ── Data layer ────────────────────────────────────────────────────────────
+data:
+  history_start: 20170101          # warmup source for 250d quantile
+  min_warmup_trading_days: 250
+  benchmark_indices: ["000300.SH", "931865.CSI", "399006.SZ"]
+  semiconductor_index: "931865.CSI"
+  update:
+    enabled: true
+    stock_fields: [open, high, low, close, pre_close, change, pct_chg, vol, amount]
+    fetch_limit_status: true
+    fetch_suspend: true
+
+# ── Data quality gate ─────────────────────────────────────────────────────
+quality_gate:
+  gate_version: dq_gate_v2
+  max_stock_lag_vs_calendar_trading_days: 0   # stock data must reach latest closed trading day
+  min_components_normal: 4
+  min_components_degraded: 3
+  require_index_alignment: true
+  require_adj_prices_positive: true   # ALL FOUR adj_* columns, not adj_close alone
+  require_amount_present: true        # true => missing amount BLOCKS (semantics enforced)
+  warmup_trading_days: 250
+
+# ── Online state machine ─────────────────────────────────────────────────
+state_machine:
+  active_max_trading_days: 20
+  cooldown_clear_days: 5           # consecutive primary_5d=False days to re-arm
+  suppress_duplicate_alerts: true
+  initialize_strategy: proven_idle_checkpoint_or_full_history
+
+# ── Panic severity (display/explanation only — never modifies P2 gate) ───
+severity:
+  p1_watch_percentile: 0.20        # worst 20% of trailing 250d but gate not triggered
+  p3_absolute_return: -0.08
+  p3_percentile: 0.05
+  p4_breadth: 0.75
+  p4_amount_ratio: 1.5
+  p4_requires_limit_down_or_volume: true
+
+# ── Reversal context ──────────────────────────────────────────────────────
+reversal:
+  market_regime:                   # frozen formula — matches research config
+    primary_index: "000300.SH"
+    ma_window_days: 120
+    return_window_days: 60
+  eligible_regimes: [bull, neutral]
+  blocked_regimes: [bear, unknown]
+  historical_reference:
+    label: "在线首次触发、bull/neutral、t+1收盘入场、20日内收盘达到净收益5%"
+    sample_size: 21
+    hits_low: 14
+    hits_high: 16
+    wilson_confidence: 0.95
+    evidence_grade: "初步(样本有限)"
+    note: "未命中样本历史最差亏损约13%-19%；不构成下一次交易的确定概率。"
+
+# ── Component commonality diagnostics ────────────────────────────────────
+commonality:
+  sector_wide_min_down: 3          # >=3/4 same direction
+  stock_driven_contribution_cap: 0.50   # frozen: single-stock share of basket drop
+  stock_driven_dominance_ratio: 2.0     # top down-mover >= 2x the second
+  min_valid_components: 3
+
+# ── Forward outcome tracking ─────────────────────────────────────────────
+outcomes:
+  horizons_trading_days: [5, 10, 20]
+  target_net_gain: 0.05
+  round_trip_cost_bps: 100
+  stop_levels: [-0.05, -0.08, -0.10]
+  entry: next_day_close            # earliest execution day close
+  min_entry_components: 3          # fewer tradable => NO_TRADABLE_BASKET
+  entry_liquidity_policy: frozen_universe_eligibility_20d
+  same_day_tp_sl_rule: stop_first_conservative
+
+# ── Notification ──────────────────────────────────────────────────────────
+notify:
+  channels: [console, markdown, json]   # email/wechat webhook reserved
+  webhook_url: null
+  notify_on_failure: true
+  push_on_rearmed: false           # rearmed pushes are opt-in
+  # webhook pushes fire ONLY on: first_trigger / severity_upgrade /
+  # quality_blocked / pipeline_failure / (rearmed if enabled) —
+  # never on still_active, NORMAL dailies, duplicate runs, or catch-up states.
+
+# ── Outputs ───────────────────────────────────────────────────────────────
+outputs:
+  directory: outputs/live/photoresist_panic_alert
+  files:
+    latest_alert_json: latest_alert.json
+    latest_alert_md: latest_alert.md
+    history_csv: panic_alert_history.csv
+    state_json: panic_state.json
+    component_csv: component_diagnostics.csv
+    quality_json: data_quality_report.json
+    outcomes_csv: forward_outcomes.csv
+    manifest_json: live_manifest.json
+    runtime_log: runtime.log
+
+# ── Universe ──────────────────────────────────────────────────────────────
+universe:
+  config_path: configs/photoresist_universe_v2.yaml
+  expected_version: photoresist_universe_v2
+  strict_effective_end: true       # no silent carry-forward past effective_end

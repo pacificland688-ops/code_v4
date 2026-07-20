@@ -1,0 +1,151 @@
+# ===========================================================================
+# Regime Candidate v2 — Sleeve Cleanup + Trend-Sensitive Allocator
+# ===========================================================================
+# 基于 regime_candidate_v1.yaml，额外调整 allocator 权重映射。
+# 修改内容:
+#   - range_bound: 降低 reversal 主导权重 (0.45→0.30)，提升 value+volume_price
+#   - trend_up: 提升 momentum+volume_price 权重，降低 reversal
+#   - trend_down: 提升 defensive+value 权重
+#   - 整体降低 reversal 在水多市场状态中的权重
+# 经济假设:
+#   - Reversal 在 A 股历史上并非多数年份的稳定 alpha 来源
+#   - Range-bound 不应天然高配 reversal（2017/2019/2021 教训）
+#   - Value 因子在多数市场状态中提供正（即使薄）alpha
+#   - Trend-up 场景中 momentum+volume_price 应更快穿透
+# 预期改善: 2017, 2019, 2021 (降低 reversal 拖累)
+# 可能伤害: 2022 (reversal 在偏熊市中提供了分散化)
+# PIT 假设: 不变
+# ===========================================================================
+
+enabled: true
+
+regime_detector:
+  index_code: "000300.SH"
+  trend:
+    ma_short: 60
+    ma_long: 120
+    return_windows: [20, 60, 120]
+  volatility:
+    vol_windows: [20, 60]
+    drawdown_window: 60
+  breadth:
+    ma_window: 60
+    min_stocks: 100
+  smoothing:
+    halflife: 4
+
+strategy_sleeves:
+  # v2: Cleaned — only uses factors from enabled_factors in factors_candidate_v1.yaml
+  reversal:
+    factors:
+      - reversal_5_cs
+      - pv_divergence_20_cs
+
+  momentum:
+    factors:
+      - pv_divergence_20_cs
+
+  defensive:
+    factors:
+      - ep_cs
+      - bp_cs
+
+  value:
+    factors:
+      - ep_cs
+      - bp_cs
+      - sp_cs
+
+  volume_price:
+    factors:
+      - pv_divergence_20_cs
+
+sleeve_composite:
+  ic_window_months: 6
+  shrinkage: 0.5
+  weight_cap: 0.50
+  min_ic_obs: 20
+  min_icir: 0.05
+  hard_cap: false
+  min_active_factors: 1
+  coverage_gate_enabled: true
+  sign_stability_check: true
+  horizon: 5
+
+sleeve_performance_overlay:
+  enabled: false
+  lookback_months: 6
+  horizon: 5
+  min_obs: 12
+  min_stocks: 30
+  icir_weight: 0.70
+  hit_rate_weight: 0.30
+  icir_scale: 0.50
+  strength: 0.50
+  neutral_multiplier: 1.00
+  multiplier_min: 0.60
+  multiplier_max: 1.60
+
+allocator:
+  min_sleeves: 2
+  sleeve_weight_cap: 0.50
+  sleeve_weight_floor: 0.05
+  max_weekly_weight_change: 0.15
+
+  # =========================================================================
+  # v2 CHANGED: regime_to_sleeve_weights — 降低 reversal 主导，提升 value 配置
+  # =========================================================================
+  regime_to_sleeve_weights:
+    # 趋势上涨: 动量+量价主导，反转边缘化
+    # v2: momentum 0.45→0.40, volume_price 0.25→0.30, reversal 0.10→0.05
+    trend_up:
+      momentum: 0.40
+      volume_price: 0.30
+      value: 0.15
+      defensive: 0.10
+      reversal: 0.05
+
+    # 趋势下跌: 防御+价值主导
+    # v2: defensive 0.45→0.50, value 0.20→0.25, reversal 0.20→0.10
+    trend_down:
+      defensive: 0.50
+      value: 0.25
+      reversal: 0.10
+      volume_price: 0.10
+      momentum: 0.05
+
+    # 震荡: 反转权重降低，价值+量价提升
+    # v2: reversal 0.45→0.30, volume_price 0.25→0.25, value 0.10→0.20
+    range_bound:
+      reversal: 0.30
+      volume_price: 0.25
+      value: 0.20
+      defensive: 0.15
+      momentum: 0.10
+
+    # 高波动: 防御主导
+    # v2: defensive 0.50→0.55, reversal 0.20→0.10
+    high_volatility:
+      defensive: 0.55
+      value: 0.20
+      reversal: 0.10
+      volume_price: 0.10
+      momentum: 0.05
+
+    # 价值轮动: 价值主导
+    # v2: value 0.45→0.50
+    value_rotation:
+      value: 0.50
+      defensive: 0.20
+      reversal: 0.15
+      momentum: 0.10
+      volume_price: 0.05
+
+factor_alignment:
+  technical_max_stale_trading_days: 5
+  fundamental_max_stale_trading_days: 63
+  fundamental_factors:
+    - ep_cs
+    - bp_cs
+    - sp_cs
+    - log_market_cap_cs

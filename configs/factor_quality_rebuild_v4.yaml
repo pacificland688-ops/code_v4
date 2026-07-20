@@ -1,0 +1,781 @@
+# Factor Quality Rebuild V4 — Configuration
+# ============================================
+# Calibration: 2017-2020 (direction, transform, parameter selection)
+# Validation:   2021-2024 (final gate, must not be used for tuning)
+# Watch-only:   2025-2026 (report only, no gate impact)
+#
+# V4: Extended alpha factor universe with full gate capabilities
+# (gate_basis, robustness, capacity) aligned with v2 baseline.
+
+windows:
+  calibration:
+    start: "20170101"
+    end: "20201231"
+  validation:
+    start: "20210101"
+    end: "20241231"
+  watch_only:
+    start: "20250101"
+    end: "20260605"
+
+horizons:
+  primary: "fwd_ret_5d"
+  auxiliary: ["fwd_ret_10d", "fwd_ret_20d"]
+
+cost:
+  single_side_bps: 20
+  round_trip_bps: 40
+  sensitivity: [10, 20, 30]
+
+# ---------------------------------------------------------------------------
+# Gate basis — raw + neutralized dual reporting
+# ---------------------------------------------------------------------------
+gate_basis:
+  raw_required: true
+  neutralized_required_for_pass: true
+  raw_pass_neutral_fail_status: WATCH_SIZE_DEPENDENT
+  raw_fail_neutral_pass_status: WATCH_NEUTRAL_ONLY
+  require_valid_neutralization_for_neutral_gate: true
+
+# ---------------------------------------------------------------------------
+# Robustness — IC trend + rolling window checks
+# ---------------------------------------------------------------------------
+robustness:
+  ic_decay_p_value: 0.10
+  rolling_windows:
+    - {name: "2018_2021", start: "20180101", end: "20211231"}
+    - {name: "2019_2022", start: "20190101", end: "20221231"}
+    - {name: "2020_2023", start: "20200101", end: "20231231"}
+    - {name: "2021_2024", start: "20210101", end: "20241231", primary: true}
+  min_pass_windows_for_strong_pass: 3
+
+# ---------------------------------------------------------------------------
+# Capacity screening
+# ---------------------------------------------------------------------------
+capacity:
+  enabled: true
+  target_aum_cny: 1000000000
+  max_participation_rate: 0.05
+  min_median_amount_cny: 20000000
+  capacity_watch_if_unavailable: true
+  daily_basic_mv_unit: wan_cny
+  amount_unit: derived_from_circ_mv
+  assumed_daily_turnover: 0.05
+
+# ---------------------------------------------------------------------------
+# V4 factor universe — all candidates for audit
+# Each factor MUST declare: role, data_lag_days, date_semantics, tradable_weighting
+# ---------------------------------------------------------------------------
+factors:
+  # --- Legacy factors (V2/V3) ---
+  - name: reversal_5_cs
+    category: reversal
+    type: technical
+    sign_hint: positive
+    role: alpha_candidate
+    data_lag_days: 0
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+
+  - name: reversal_20_cs
+    category: reversal
+    type: technical
+    sign_hint: positive
+    role: alpha_candidate
+    data_lag_days: 0
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+
+  - name: momentum_60_cs
+    category: momentum
+    type: technical
+    sign_hint: positive
+    role: alpha_candidate
+    data_lag_days: 0
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+
+  - name: momentum_120_cs
+    category: momentum
+    type: technical
+    sign_hint: positive
+    role: alpha_candidate
+    data_lag_days: 0
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+
+  - name: volatility_20_cs
+    category: volatility
+    type: technical
+    sign_hint: negative
+    role: alpha_candidate
+    data_lag_days: 0
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+
+  - name: volatility_60_cs
+    category: volatility
+    type: technical
+    sign_hint: negative
+    role: alpha_candidate
+    data_lag_days: 0
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+
+  - name: rsi_14_cs
+    category: oscillator
+    type: technical
+    sign_hint: negative
+    role: alpha_candidate
+    data_lag_days: 0
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+
+  - name: macd_12_26_9_cs
+    category: oscillator
+    type: technical
+    sign_hint: positive
+    role: alpha_candidate
+    data_lag_days: 0
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+
+  - name: pv_divergence_20_cs
+    category: price_volume
+    type: technical
+    sign_hint: positive
+    role: alpha_candidate
+    data_lag_days: 0
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+
+  - name: ep_cs
+    category: value
+    type: fundamental
+    sign_hint: positive
+    role: alpha_candidate
+    data_lag_days: 63
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+
+  - name: bp_cs
+    category: value
+    type: fundamental
+    sign_hint: positive
+    role: alpha_candidate
+    data_lag_days: 63
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+
+  - name: sp_cs
+    category: value
+    type: fundamental
+    sign_hint: positive
+    role: alpha_candidate
+    data_lag_days: 63
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+
+  - name: roe_cs
+    category: quality
+    type: fundamental
+    sign_hint: positive
+    role: alpha_candidate
+    data_lag_days: 63
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+
+  - name: gross_margin_cs
+    category: quality
+    type: fundamental
+    sign_hint: positive
+    role: alpha_candidate
+    data_lag_days: 63
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+
+  - name: profit_growth_cs
+    category: growth
+    type: fundamental
+    sign_hint: positive
+    role: alpha_candidate
+    data_lag_days: 63
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+
+  - name: revenue_growth_cs
+    category: growth
+    type: fundamental
+    sign_hint: positive
+    role: alpha_candidate
+    data_lag_days: 63
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+
+  - name: leverage_cs
+    category: risk
+    type: fundamental
+    sign_hint: negative
+    role: alpha_candidate
+    data_lag_days: 63
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+
+  # log_market_cap is a NEUTRALIZER — NOT an alpha candidate
+  - name: log_market_cap_cs
+    category: size
+    type: fundamental
+    sign_hint: negative
+    role: neutralizer
+    data_lag_days: 0
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+
+  # --- V4 Quality factors ---
+  - name: roe_stability_8q_cs
+    category: quality
+    type: fundamental
+    sign_hint: positive
+    role: alpha_candidate
+    data_lag_days: 63
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+
+  - name: roa_ttm_cs
+    category: quality
+    type: fundamental
+    sign_hint: positive
+    role: alpha_candidate
+    data_lag_days: 63
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+
+  - name: gross_margin_ttm_cs
+    category: quality
+    type: fundamental
+    sign_hint: positive
+    role: alpha_candidate
+    data_lag_days: 63
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+
+  - name: net_margin_ttm_cs
+    category: quality
+    type: fundamental
+    sign_hint: positive
+    role: alpha_candidate
+    data_lag_days: 63
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+
+  - name: profitability_quality_cs
+    category: quality
+    type: fundamental
+    sign_hint: positive
+    role: alpha_candidate
+    data_lag_days: 63
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+
+  - name: asset_turnover_ttm_cs
+    category: quality
+    type: fundamental
+    sign_hint: positive
+    role: alpha_candidate
+    data_lag_days: 63
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+
+  # --- V4 Growth factors ---
+  - name: revenue_growth_ttm_cs
+    category: growth
+    type: fundamental
+    sign_hint: positive
+    role: alpha_candidate
+    data_lag_days: 63
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+
+  - name: profit_growth_ttm_cs
+    category: growth
+    type: fundamental
+    sign_hint: positive
+    role: alpha_candidate
+    data_lag_days: 63
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+
+  - name: growth_stability_8q_cs
+    category: growth
+    type: fundamental
+    sign_hint: positive
+    role: alpha_candidate
+    data_lag_days: 63
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+
+  - name: growth_value_match_cs
+    category: growth
+    type: fundamental
+    sign_hint: positive
+    role: alpha_candidate
+    data_lag_days: 63
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+
+  - name: earnings_acceleration_cs
+    category: growth
+    type: fundamental
+    sign_hint: positive
+    role: alpha_candidate
+    data_lag_days: 63
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+
+  # --- V4 Cashflow factors ---
+  - name: ocf_to_mktcap_cs
+    category: cashflow
+    type: fundamental
+    sign_hint: positive
+    role: alpha_candidate
+    data_lag_days: 63
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+
+  - name: ocf_to_profit_cs
+    category: cashflow
+    type: fundamental
+    sign_hint: positive
+    role: alpha_candidate
+    data_lag_days: 63
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+
+  - name: fcf_yield_cs
+    category: cashflow
+    type: fundamental
+    sign_hint: positive
+    role: alpha_candidate
+    data_lag_days: 63
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+
+  - name: cashflow_stability_8q_cs
+    category: cashflow
+    type: fundamental
+    sign_hint: positive
+    role: alpha_candidate
+    data_lag_days: 63
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+
+  - name: accrual_quality_cs
+    category: cashflow
+    type: fundamental
+    sign_hint: positive
+    role: alpha_candidate
+    data_lag_days: 63
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+
+  - name: receivable_pressure_cs
+    category: cashflow
+    type: fundamental
+    sign_hint: negative
+    role: alpha_candidate
+    data_lag_days: 63
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+
+  # --- V4 Value Repair factors ---
+  - name: industry_relative_ep_cs
+    category: value_repair
+    type: fundamental
+    sign_hint: positive
+    role: alpha_candidate
+    data_lag_days: 63
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+
+  - name: industry_relative_bp_cs
+    category: value_repair
+    type: fundamental
+    sign_hint: positive
+    role: alpha_candidate
+    data_lag_days: 63
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+
+  - name: valuation_reversion_3y_cs
+    category: value_repair
+    type: fundamental
+    sign_hint: positive
+    role: alpha_candidate
+    data_lag_days: 63
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+
+  - name: quality_value_composite_cs
+    category: value_repair
+    type: fundamental
+    sign_hint: positive
+    role: alpha_candidate
+    data_lag_days: 63
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+
+  - name: dividend_quality_cs
+    category: value_repair
+    type: fundamental
+    sign_hint: positive
+    role: alpha_candidate
+    data_lag_days: 63
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+
+  # --- V4 Industry Relative factors ---
+  - name: industry_relative_momentum_60_cs
+    category: industry_relative
+    type: technical
+    sign_hint: positive
+    role: alpha_candidate
+    data_lag_days: 0
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+
+  - name: industry_relative_quality_cs
+    category: industry_relative
+    type: fundamental
+    sign_hint: positive
+    role: alpha_candidate
+    data_lag_days: 63
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+
+  - name: industry_relative_growth_cs
+    category: industry_relative
+    type: fundamental
+    sign_hint: positive
+    role: alpha_candidate
+    data_lag_days: 63
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+
+  - name: industry_relative_value_cs
+    category: industry_relative
+    type: fundamental
+    sign_hint: positive
+    role: alpha_candidate
+    data_lag_days: 63
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+
+  # --- V4 Risk-Adjusted Momentum factors ---
+  - name: momentum_60_skip5_cs
+    category: risk_adj_momentum
+    type: technical
+    sign_hint: positive
+    role: alpha_candidate
+    data_lag_days: 0
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+
+  - name: momentum_120_skip20_cs
+    category: risk_adj_momentum
+    type: technical
+    sign_hint: positive
+    role: alpha_candidate
+    data_lag_days: 0
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+
+  - name: risk_adjusted_momentum_60_cs
+    category: risk_adj_momentum
+    type: technical
+    sign_hint: positive
+    role: alpha_candidate
+    data_lag_days: 0
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+
+  - name: volume_confirmed_momentum_cs
+    category: risk_adj_momentum
+    type: technical
+    sign_hint: positive
+    role: alpha_candidate
+    data_lag_days: 0
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+
+  - name: trend_quality_cs
+    category: risk_adj_momentum
+    type: technical
+    sign_hint: positive
+    role: alpha_candidate
+    data_lag_days: 0
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+
+  # --- V4 Reversal Repair factors ---
+  - name: reversal_5_liquidity_adj_cs
+    category: reversal_repair
+    type: technical
+    sign_hint: positive
+    role: alpha_candidate
+    data_lag_days: 0
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+
+  - name: reversal_20_vol_adj_cs
+    category: reversal_repair
+    type: technical
+    sign_hint: positive
+    role: alpha_candidate
+    data_lag_days: 0
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+
+  - name: reversal_5_liquidity_adj_weekly_cs
+    category: reversal_repair
+    type: technical
+    sign_hint: positive
+    role: alpha_candidate
+    data_lag_days: 0
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+
+  - name: reversal_20_vol_adj_weekly_cs
+    category: reversal_repair
+    type: technical
+    sign_hint: positive
+    role: alpha_candidate
+    data_lag_days: 0
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+
+  # --- V4 Benchmark-aware defensive repair factors ---
+  - name: low_beta_60_cs
+    category: risk_premium
+    type: technical
+    sign_hint: positive
+    role: alpha_candidate
+    data_lag_days: 0
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+
+  - name: drawdown_resilience_cs
+    category: risk_premium
+    type: technical
+    sign_hint: positive
+    role: alpha_candidate
+    data_lag_days: 0
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+
+  - name: low_beta_120_monthly_cs
+    category: risk_premium
+    type: technical
+    sign_hint: positive
+    role: alpha_candidate
+    data_lag_days: 0
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+
+  - name: drawdown_resilience_monthly_cs
+    category: risk_premium
+    type: technical
+    sign_hint: positive
+    role: alpha_candidate
+    data_lag_days: 0
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+
+  # --- New V4 factor families (Alpha Research Factory) ---
+  - name: intraday_reversal_cs
+    category: micro_structure
+    type: technical
+    sign_hint: positive
+    role: alpha_candidate
+    data_lag_days: 0
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+
+  - name: overnight_reversal_cs
+    category: micro_structure
+    type: technical
+    sign_hint: positive
+    role: alpha_candidate
+    data_lag_days: 0
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+
+  - name: amihud_illiq_20d_cs
+    category: micro_structure
+    type: technical
+    sign_hint: negative
+    role: alpha_candidate
+    data_lag_days: 0
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+
+  - name: vol_price_divergence_20d_cs
+    category: micro_structure
+    type: technical
+    sign_hint: positive
+    role: alpha_candidate
+    data_lag_days: 0
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+
+  - name: volatility_squeeze_cs
+    category: micro_structure
+    type: technical
+    sign_hint: positive
+    role: alpha_candidate
+    data_lag_days: 0
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+
+  - name: tail_risk_60d_cs
+    category: micro_structure
+    type: technical
+    sign_hint: negative
+    role: alpha_candidate
+    data_lag_days: 0
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+
+  - name: turnover_anomaly_20d_cs
+    category: liquidity
+    type: technical
+    sign_hint: negative
+    role: alpha_candidate
+    data_lag_days: 0
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+
+  - name: turnover_volatility_60d_cs
+    category: liquidity
+    type: technical
+    sign_hint: negative
+    role: alpha_candidate
+    data_lag_days: 0
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+
+  - name: volume_shock_5d_cs
+    category: liquidity
+    type: technical
+    sign_hint: negative
+    role: alpha_candidate
+    data_lag_days: 0
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+
+  - name: amount_concentration_20d_cs
+    category: liquidity
+    type: technical
+    sign_hint: negative
+    role: alpha_candidate
+    data_lag_days: 0
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+
+  - name: low_volatility_60d_cs
+    category: risk_premium
+    type: technical
+    sign_hint: positive
+    role: alpha_candidate
+    data_lag_days: 0
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+
+  - name: residual_volatility_60d_cs
+    category: risk_premium
+    type: technical
+    sign_hint: negative
+    role: alpha_candidate
+    data_lag_days: 0
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+
+  - name: bollinger_position_20d_cs
+    category: technical
+    type: technical
+    sign_hint: negative
+    role: alpha_candidate
+    data_lag_days: 0
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+
+  - name: price_channel_position_60d_cs
+    category: technical
+    type: technical
+    sign_hint: positive
+    role: alpha_candidate
+    data_lag_days: 0
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+
+  - name: rsi_divergence_14d_cs
+    category: technical
+    type: technical
+    sign_hint: negative
+    role: alpha_candidate
+    data_lag_days: 0
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+
+  - name: revenue_stability_8q_cs
+    category: quality
+    type: fundamental
+    sign_hint: positive
+    role: alpha_candidate
+    data_lag_days: 63
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+
+  - name: margin_trend_8q_cs
+    category: quality
+    type: fundamental
+    sign_hint: positive
+    role: alpha_candidate
+    data_lag_days: 63
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+
+neutralization:
+  enabled: true
+  neutralizers:
+    - name: "none"
+      description: "Raw CS factor (already winsorized + standardized)"
+    - name: "industry_mcap"
+      description: "Industry dummy + log_market_cap OLS residual"
+  min_stocks: 30
+  min_neutralizer_coverage_pct: 70
+  require_valid_neutralization_for_neutral_gate: true
+
+# V4 quality gate thresholds (aligned with v2 baseline)
+gate:
+  min_coverage_pct: 80
+  min_single_year_coverage_pct: 60
+  min_mean_rank_ic: 0.01
+  min_icir: 0.20
+  min_positive_ic_years: 3
+  min_top_bottom_net_spread_5d: 0.0
+  min_positive_spread_years: 3
+  min_top_quintile_net_excess_5d: 0.0
+  min_positive_excess_years: 3
+  min_net_gross_spread_ratio: 0.50
+  max_single_year_contribution_pct: 60
+  require_no_leakage: true
+  max_factor_lag_days:
+    technical: 7
+    fundamental: 63
+
+correlation:
+  max_intra_cluster_corr: 0.85
+  cluster_representative: "best_gate_score"
+
+output:
+  candidate_pool: "factor_candidate_pool.yaml"

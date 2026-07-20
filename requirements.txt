@@ -1,0 +1,32 @@
+# code_v4: CSI 300 Cross-Sectional Multi-Factor Strategy
+# ========================================================
+# Core
+pandas>=2.0.0
+numpy>=1.24.0,<2.0
+scipy>=1.10.0
+pyyaml>=6.0
+python-dotenv>=1.0.0
+
+# Data pipeline (memory-efficient)
+tushare>=1.4.0
+pyarrow>=14.0.0        # parquet partitioning, predicate pushdown
+duckdb>=0.10.0         # cross-parquet SQL queries
+polars>=0.20.0         # lazy scan, low-memory groupby
+
+# Factor evaluation & ML
+scikit-learn>=1.3.0
+statsmodels>=0.14.0
+
+# Portfolio optimization (REQUIRED for Phase 3+)
+cvxpy>=1.4.0            # convex optimization — not optional
+ecos>=2.0               # cvxpy solver
+scipy>=1.10.0           # already listed above, used by cvxpy
+
+# Monitoring
+psutil>=5.9.0
+
+# Visualization
+matplotlib>=3.7.0
+
+# Development
+pytest>=7.4.0

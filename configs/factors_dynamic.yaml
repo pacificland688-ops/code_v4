@@ -1,0 +1,98 @@
+# ============================================================================
+# Dynamic factor configuration — full candidate pool with all gates enabled.
+#
+# Usage (A/B backtest):
+#   python run_research.py phase2 --start 20170101 --end 20251231 \
+#       --top-n 50 --factors-config configs/factors_dynamic.yaml
+#
+# This configuration enables:
+#   - Full candidate pool (all 13+ cached _cs factors)
+#   - Per-date historical coverage gate (no future leakage)
+#   - ICIR noise filter (min_icir=0.05)
+#   - Post-normalization hard weight cap (0.25)
+#   - min_active_factors=4 safety valve (cap 0.25 * 4 = 1.0)
+#   - Faster regime response (6-month IC window)
+#   - More conservative shrinkage (0.5)
+# ============================================================================
+
+factors:
+  # (Factor definitions are unchanged — this file inherits the full
+  #  factor list from factors.yaml via the YAML structure.  Only the
+  #  composite and enabled settings differ.)
+
+# ---------------------------------------------------------------------------
+# Cross-section processing parameters (unchanged from factors.yaml)
+# ---------------------------------------------------------------------------
+cross_section:
+  winsor_method: "mad"
+  mad_multiplier: 5.0
+  quantile_lower: 0.01
+  quantile_upper: 0.99
+  missing_method: "industry_median"
+  min_coverage: 0.5
+  neutralize: true
+  neutralizers: ["industry", "log_market_cap"]
+  neutralize_method: "ols_residual"
+  standardize: "zscore"
+  min_stocks_for_cs: 30
+
+# ---------------------------------------------------------------------------
+# Factor evaluation parameters (unchanged)
+# ---------------------------------------------------------------------------
+evaluation:
+  horizons: [1, 5, 10, 20]
+  quantile_groups: 5
+  annual_periods:
+    - [2016, 2018]
+    - [2019, 2021]
+    - [2022, 2024]
+    - [2025, 2026]
+  min_mean_ic: 0.02
+  min_icir: 0.3
+  min_ic_positive_rate: 0.52
+
+# ---------------------------------------------------------------------------
+# Composite score — DYNAMIC MODE
+# ---------------------------------------------------------------------------
+composite:
+  ic_window_months: 6            # faster regime response (was 12)
+  ic_method: "rank"
+  shrinkage: 0.5                 # more conservative on small samples (was 0.3)
+  weight_cap: 0.25               # tightened hard cap (was 0.3)
+  min_ic_obs: 20
+  min_icir: 0.05                 # exclude pure-noise factors
+  hard_cap: true                 # enable post-normalization iterative cap
+  horizon: 5
+  min_active_factors: 4          # require >=4 factors (cap 0.25 * 4 = 1.0)
+  coverage_gate_enabled: true    # enable per-date historical coverage gate
+  sign_stability_check: true
+  # Coverage gate parameters
+  min_date_coverage: 0.70
+  min_stocks_per_date: 30
+  min_merge_rate: 0.30
+
+# ---------------------------------------------------------------------------
+# Factor selection — FULL CANDIDATE POOL
+# ---------------------------------------------------------------------------
+# Empty list = all cached _cs factors are candidates.
+# Coverage gate + ICIR gate filter dynamically at each signal_date.
+enabled_factors: []
+
+# disabled_factors is documentation only — no code reads it.
+disabled_factors:
+  momentum_60_cs: "ICIR gate will evaluate per window"
+  momentum_120_cs: "ICIR gate will evaluate per window"
+  volatility_60_cs: "May enter when vol_20 is insufficient"
+  ivol_20_cs: "Coverage gate will evaluate"
+  turnover_5_cs: "ICIR gate will evaluate"
+  abnormal_turnover_20_cs: "ICIR gate will evaluate"
+  macd_12_26_9_cs: "ICIR gate will evaluate"
+  ep_cs: "Coverage gate will assess data availability per window"
+  bp_cs: "Coverage gate will assess data availability per window"
+  sp_cs: "Coverage gate will assess data availability per window"
+  roe_cs: "Coverage gate will assess data availability per window"
+  gross_margin_cs: "Coverage gate will assess data availability per window"
+  revenue_growth_cs: "Coverage gate will assess data availability per window"
+  profit_growth_cs: "Coverage gate will assess data availability per window"
+  leverage_cs: "Coverage gate will assess data availability per window"
+  size_cs: "Used for neutralization, not as alpha factor"

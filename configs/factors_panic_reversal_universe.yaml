@@ -1,0 +1,312 @@
+# ===========================================================================
+# Panic Reversal Candidate Universe — 27 Variants
+# ===========================================================================
+# 3 directions × 3 thresholds × 3 signal types = 27 candidates
+#
+# Direction:
+#   drop = long extreme losers (mom5 <= -threshold)
+#   up   = short extreme winners (mom5 >= threshold)
+#   sym  = symmetric: long drops, short surges
+#
+# Threshold: t03=3%, t05=5%, t07=7%
+#
+# Signal type:
+#   bin   = event=±1, non-event=0
+#   cont  = value = -mom5 (drop) / mom5 (up), non-event=0
+#   wcont = cont + cross-sectional winsor of non-zero values (5%/95%)
+#
+# All candidates: weekly frequency, no 5-day smoothing, no vol adjustment.
+# ===========================================================================
+
+factors:
+  # =========================================================================
+  # Panic Drop (long candidates)
+  # =========================================================================
+  - name: panic_drop_rev5_t03_bin_weekly_cs
+    category: panic_reversal
+    type: technical
+    priority: P1
+    sign_hint: positive
+    description: "Panic drop reversal: mom5<=-3%, binary signal"
+    data_sources: [prices_adj]
+    required_fields:
+      prices_adj: [adj_close]
+
+  - name: panic_drop_rev5_t03_cont_weekly_cs
+    category: panic_reversal
+    type: technical
+    priority: P1
+    sign_hint: positive
+    description: "Panic drop reversal: mom5<=-3%, continuous -mom5"
+    data_sources: [prices_adj]
+    required_fields:
+      prices_adj: [adj_close]
+
+  - name: panic_drop_rev5_t03_wcont_weekly_cs
+    category: panic_reversal
+    type: technical
+    priority: P1
+    sign_hint: positive
+    description: "Panic drop reversal: mom5<=-3%, winsorized continuous"
+    data_sources: [prices_adj]
+    required_fields:
+      prices_adj: [adj_close]
+
+  - name: panic_drop_rev5_t05_bin_weekly_cs
+    category: panic_reversal
+    type: technical
+    priority: P1
+    sign_hint: positive
+    description: "Panic drop reversal: mom5<=-5%, binary signal"
+    data_sources: [prices_adj]
+    required_fields:
+      prices_adj: [adj_close]
+
+  - name: panic_drop_rev5_t05_cont_weekly_cs
+    category: panic_reversal
+    type: technical
+    priority: P1
+    sign_hint: positive
+    description: "Panic drop reversal: mom5<=-5%, continuous -mom5"
+    data_sources: [prices_adj]
+    required_fields:
+      prices_adj: [adj_close]
+
+  - name: panic_drop_rev5_t05_wcont_weekly_cs
+    category: panic_reversal
+    type: technical
+    priority: P1
+    sign_hint: positive
+    description: "Panic drop reversal: mom5<=-5%, winsorized continuous"
+    data_sources: [prices_adj]
+    required_fields:
+      prices_adj: [adj_close]
+
+  - name: panic_drop_rev5_t07_bin_weekly_cs
+    category: panic_reversal
+    type: technical
+    priority: P1
+    sign_hint: positive
+    description: "Panic drop reversal: mom5<=-7%, binary signal"
+    data_sources: [prices_adj]
+    required_fields:
+      prices_adj: [adj_close]
+
+  - name: panic_drop_rev5_t07_cont_weekly_cs
+    category: panic_reversal
+    type: technical
+    priority: P1
+    sign_hint: positive
+    description: "Panic drop reversal: mom5<=-7%, continuous -mom5"
+    data_sources: [prices_adj]
+    required_fields:
+      prices_adj: [adj_close]
+
+  - name: panic_drop_rev5_t07_wcont_weekly_cs
+    category: panic_reversal
+    type: technical
+    priority: P1
+    sign_hint: positive
+    description: "Panic drop reversal: mom5<=-7%, winsorized continuous"
+    data_sources: [prices_adj]
+    required_fields:
+      prices_adj: [adj_close]
+
+  # =========================================================================
+  # Panic Up (short candidates)
+  # =========================================================================
+  - name: panic_up_rev5_t03_bin_weekly_cs
+    category: panic_reversal
+    type: technical
+    priority: P1
+    sign_hint: negative
+    description: "Panic up reversal: mom5>=+3%, binary signal"
+    data_sources: [prices_adj]
+    required_fields:
+      prices_adj: [adj_close]
+
+  - name: panic_up_rev5_t03_cont_weekly_cs
+    category: panic_reversal
+    type: technical
+    priority: P1
+    sign_hint: negative
+    description: "Panic up reversal: mom5>=+3%, continuous mom5"
+    data_sources: [prices_adj]
+    required_fields:
+      prices_adj: [adj_close]
+
+  - name: panic_up_rev5_t03_wcont_weekly_cs
+    category: panic_reversal
+    type: technical
+    priority: P1
+    sign_hint: negative
+    description: "Panic up reversal: mom5>=+3%, winsorized continuous"
+    data_sources: [prices_adj]
+    required_fields:
+      prices_adj: [adj_close]
+
+  - name: panic_up_rev5_t05_bin_weekly_cs
+    category: panic_reversal
+    type: technical
+    priority: P1
+    sign_hint: negative
+    description: "Panic up reversal: mom5>=+5%, binary signal"
+    data_sources: [prices_adj]
+    required_fields:
+      prices_adj: [adj_close]
+
+  - name: panic_up_rev5_t05_cont_weekly_cs
+    category: panic_reversal
+    type: technical
+    priority: P1
+    sign_hint: negative
+    description: "Panic up reversal: mom5>=+5%, continuous mom5"
+    data_sources: [prices_adj]
+    required_fields:
+      prices_adj: [adj_close]
+
+  - name: panic_up_rev5_t05_wcont_weekly_cs
+    category: panic_reversal
+    type: technical
+    priority: P1
+    sign_hint: negative
+    description: "Panic up reversal: mom5>=+5%, winsorized continuous"
+    data_sources: [prices_adj]
+    required_fields:
+      prices_adj: [adj_close]
+
+  - name: panic_up_rev5_t07_bin_weekly_cs
+    category: panic_reversal
+    type: technical
+    priority: P1
+    sign_hint: negative
+    description: "Panic up reversal: mom5>=+7%, binary signal"
+    data_sources: [prices_adj]
+    required_fields:
+      prices_adj: [adj_close]
+
+  - name: panic_up_rev5_t07_cont_weekly_cs
+    category: panic_reversal
+    type: technical
+    priority: P1
+    sign_hint: negative
+    description: "Panic up reversal: mom5>=+7%, continuous mom5"
+    data_sources: [prices_adj]
+    required_fields:
+      prices_adj: [adj_close]
+
+  - name: panic_up_rev5_t07_wcont_weekly_cs
+    category: panic_reversal
+    type: technical
+    priority: P1
+    sign_hint: negative
+    description: "Panic up reversal: mom5>=+7%, winsorized continuous"
+    data_sources: [prices_adj]
+    required_fields:
+      prices_adj: [adj_close]
+
+  # =========================================================================
+  # Panic Symmetric (long+short combined)
+  # =========================================================================
+  - name: panic_sym_rev5_t03_bin_weekly_cs
+    category: panic_reversal
+    type: technical
+    priority: P1
+    sign_hint: positive
+    description: "Panic symmetric: |mom5|>=3%, binary ±1"
+    data_sources: [prices_adj]
+    required_fields:
+      prices_adj: [adj_close]
+
+  - name: panic_sym_rev5_t03_cont_weekly_cs
+    category: panic_reversal
+    type: technical
+    priority: P1
+    sign_hint: positive
+    description: "Panic symmetric: |mom5|>=3%, continuous ±mom5"
+    data_sources: [prices_adj]
+    required_fields:
+      prices_adj: [adj_close]
+
+  - name: panic_sym_rev5_t03_wcont_weekly_cs
+    category: panic_reversal
+    type: technical
+    priority: P1
+    sign_hint: positive
+    description: "Panic symmetric: |mom5|>=3%, winsorized continuous"
+    data_sources: [prices_adj]
+    required_fields:
+      prices_adj: [adj_close]
+
+  - name: panic_sym_rev5_t05_bin_weekly_cs
+    category: panic_reversal
+    type: technical
+    priority: P1
+    sign_hint: positive
+    description: "Panic symmetric: |mom5|>=5%, binary ±1"
+    data_sources: [prices_adj]
+    required_fields:
+      prices_adj: [adj_close]
+
+  - name: panic_sym_rev5_t05_cont_weekly_cs
+    category: panic_reversal
+    type: technical
+    priority: P1
+    sign_hint: positive
+    description: "Panic symmetric: |mom5|>=5%, continuous ±mom5"
+    data_sources: [prices_adj]
+    required_fields:
+      prices_adj: [adj_close]
+
+  - name: panic_sym_rev5_t05_wcont_weekly_cs
+    category: panic_reversal
+    type: technical
+    priority: P1
+    sign_hint: positive
+    description: "Panic symmetric: |mom5|>=5%, winsorized continuous"
+    data_sources: [prices_adj]
+    required_fields:
+      prices_adj: [adj_close]
+
+  - name: panic_sym_rev5_t07_bin_weekly_cs
+    category: panic_reversal
+    type: technical
+    priority: P1
+    sign_hint: positive
+    description: "Panic symmetric: |mom5|>=7%, binary ±1"
+    data_sources: [prices_adj]
+    required_fields:
+      prices_adj: [adj_close]
+
+  - name: panic_sym_rev5_t07_cont_weekly_cs
+    category: panic_reversal
+    type: technical
+    priority: P1
+    sign_hint: positive
+    description: "Panic symmetric: |mom5|>=7%, continuous ±mom5"
+    data_sources: [prices_adj]
+    required_fields:
+      prices_adj: [adj_close]
+
+  - name: panic_sym_rev5_t07_wcont_weekly_cs
+    category: panic_reversal
+    type: technical
+    priority: P1
+    sign_hint: positive
+    description: "Panic symmetric: |mom5|>=7%, winsorized continuous"
+    data_sources: [prices_adj]
+    required_fields:
+      prices_adj: [adj_close]
+
+# ===========================================================================
+# Cross-sectional processing — disabled for panic reversal
+# Rationale: these are sparse event-driven signals. Neutralization and
+# standardization would inject noise; missing_method=drop preserves the
+# sparsity pattern (non-event = 0, not industry median).
+# ===========================================================================
+cross_section:
+  enabled: false
+  neutralize: false
+  standardize: "none"
+  missing_method: "drop"
+  min_stocks_for_cs: 10

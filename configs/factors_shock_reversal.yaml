@@ -1,0 +1,106 @@
+# ===========================================================================
+# Shock Reversal Factor Configuration
+# ===========================================================================
+# 异常下跌后可交易反转因子配置
+#
+# 经济假设:
+#   非市场系统性下跌、非行业同步下跌、非基本面重大恶化、
+#   非低流动性噪声导致的短期异常下跌后的反转机会。
+#
+# 防过拟合原则:
+#   - 所有参数基于经济逻辑预设，不来自网格搜索
+#   - 第一版参数冻结，不得微调
+#   - 样本划分: 2017-2020 研究, 2021-2022 验证, 2023-2024 OOS
+# ===========================================================================
+
+shock_reversal:
+  enabled: true
+
+  # 因子列表
+  factors:
+    - abnormal_drop_reversal_5_cs
+
+  # -----------------------------------------------------------------------
+  # 因子计算参数 (全部事前固定，来自经济逻辑)
+  # -----------------------------------------------------------------------
+  params:
+    # 异常下跌观察窗口 (交易日)
+    residual_window: 5
+
+    # 市场 beta 估计窗口 (交易日)
+    beta_window: 60
+
+    # 残差波动估计窗口 (交易日)
+    vol_window: 60
+
+    # 异常下跌触发阈值 (z-score)
+    drop_z_threshold: 1.5
+
+    # 前向收益评估窗口 (交易日)
+    forward_return_windows: [3, 5, 10]
+
+    # 流动性过滤 — 最低横截面分位
+    min_liquidity_rank: 0.3
+
+    # 近期跌停过滤窗口 (交易日)
+    limit_down_lookback: 3
+
+    # 中期趋势惩罚窗口 (交易日)
+    trend_window: 20
+
+    # 中期趋势惩罚触发阈值 (z-score)
+    trend_z_threshold: -2.0
+
+    # 中期趋势惩罚乘数
+    trend_penalty: 0.5
+
+    # 财报公告后过滤天数 (交易日)
+    # 第一版预留接口，暂不启用
+    earnings_blackout_days_after: 3
+    earnings_blackout_enabled: false
+
+    # IPO 过滤 — 最小上市天数
+    ipo_min_trading_days: 60
+    ipo_min_calendar_days: 120
+
+  # -----------------------------------------------------------------------
+  # 横截面处理参数
+  # P0-2 fix: missing_method = "drop" — filtered stocks (ST/IPO/suspend/
+  # low-liquidity) are structural exclusions and MUST NOT be backfilled
+  # by median imputation. The generic CS processor defaults to
+  # cross_sectional_median which would silently restore filtered stocks.
+  # -----------------------------------------------------------------------
+  cross_section:
+    winsor_method: "mad"
+    mad_multiplier: 5.0
+    missing_method: "drop"
+    neutralize: true
+    neutralizers:
+      - "log_market_cap"
+      # 行业中性化暂不启用 — 行业数据非 PIT
+      # - "industry"
+    standardize_method: "zscore"
+    min_stocks_for_cs: 30
+
+  # -----------------------------------------------------------------------
+  # 样本用途 (事前固定)
+  # -----------------------------------------------------------------------
+  samples:
+    research: [2017, 2020]       # 初始研究与逻辑检查
+    validation: [2021, 2022]     # 参数冻结前验证
+    oos: [2023, 2024]            # 正式样本外验证
+    diagnostic: [2025]           # 问题诊断集
+    forward_obs: [2026]          # 前瞻观察 (不参与调参)
+
+  # -----------------------------------------------------------------------
+  # 评估指标门槛
+  # -----------------------------------------------------------------------
+  acceptance_criteria:
+    mean_ic_min: 0.02
+    icir_min: 0.30
+    ic_positive_rate_min: 0.52
+    top_bottom_spread: "positive_after_cost"
+    mid_high_liquidity_effective: true
+    exclude_earnings_limitdown: "收益不消失"
+    bid_ask_bounce_check: "不依赖收盘价噪声"
+    pit_audit: "future_obs = 0"

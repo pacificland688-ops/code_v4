@@ -1,0 +1,199 @@
+# ===========================================================================
+# Regime Configuration with Shock Reversal Sleeve
+# ===========================================================================
+# 基于 regime.yaml 基准配置，新增 shock_reversal sleeve。
+#
+# 关键修改:
+#   - 新增 shock_reversal sleeve (低权重接入)
+#   - 所有 regime 映射矩阵增加 shock_reversal 维度
+#   - 震荡市 (range_bound) 给予 shock_reversal 最高权重
+#   - 趋势下跌和高波动中压低 shock_reversal 权重
+#
+# 经济假设:
+#   - 震荡市更适合异常反转 (临时冲击更可能在震荡中修复)
+#   - 趋势下跌和高波动环境谨慎 (系统性风险主导)
+#   - 新 sleeve 未充分验证前不能主导组合
+#
+# PIT 假设: 不变
+# ===========================================================================
+
+enabled: true
+
+# ---------------------------------------------------------------------------
+# Regime Detector — 市场状态识别 (与基准配置一致)
+# ---------------------------------------------------------------------------
+regime_detector:
+  index_code: "000300.SH"
+
+  trend:
+    ma_short: 60
+    ma_long: 120
+    return_windows: [20, 60, 120]
+
+  volatility:
+    vol_windows: [20, 60]
+    drawdown_window: 60
+
+  breadth:
+    ma_window: 60
+    min_stocks: 100
+
+  smoothing:
+    halflife: 4
+
+# ---------------------------------------------------------------------------
+# Strategy Sleeves — 新增 shock_reversal
+# ---------------------------------------------------------------------------
+strategy_sleeves:
+  # 反转策略 — 震荡/均值回归市场
+  reversal:
+    factors:
+      - reversal_5_cs
+      - reversal_20_cs
+      - rsi_14_cs
+      - pv_divergence_20_cs
+
+  # 动量策略 — 趋势上涨/趋势延续市场
+  momentum:
+    factors:
+      - momentum_60_cs
+      - momentum_120_cs
+      - macd_12_26_9_cs
+      - pv_divergence_20_cs
+
+  # 防御策略 — 下跌/高波动/风险收缩市场
+  defensive:
+    factors:
+      - volatility_20_cs
+      - volatility_60_cs
+      - reversal_20_cs
+
+  # 价值策略 — 价值风格占优市场
+  value:
+    factors:
+      - ep_cs
+      - bp_cs
+      - sp_cs
+
+  # 量价策略 — 量价结构明显/成交驱动市场
+  volume_price:
+    factors:
+      - pv_divergence_20_cs
+      - macd_12_26_9_cs
+      - momentum_60_cs
+      - volatility_20_cs
+
+  # =========================================================================
+  # NEW: Shock Reversal 策略 — 异常下跌后可交易反转
+  # =========================================================================
+  shock_reversal:
+    factors:
+      - abnormal_drop_reversal_5_cs
+
+# ---------------------------------------------------------------------------
+# Sleeve Composite — IC 加权参数 (与基准配置一致)
+# ---------------------------------------------------------------------------
+sleeve_composite:
+  ic_window_months: 6
+  shrinkage: 0.5
+  weight_cap: 0.50
+  min_ic_obs: 20
+  min_icir: 0.05
+  hard_cap: false
+  min_active_factors: 1
+  coverage_gate_enabled: true
+  sign_stability_check: true
+  horizon: 5
+
+# ---------------------------------------------------------------------------
+# Sleeve Performance Overlay — 默认关闭
+# ---------------------------------------------------------------------------
+sleeve_performance_overlay:
+  enabled: false
+
+  lookback_months: 6
+  horizon: 5
+  min_obs: 12
+  min_stocks: 30
+
+  icir_weight: 0.70
+  hit_rate_weight: 0.30
+  icir_scale: 0.50
+  strength: 0.50
+  neutral_multiplier: 1.00
+  multiplier_min: 0.60
+  multiplier_max: 1.60
+
+# ---------------------------------------------------------------------------
+# Allocator — Regime 到 Sleeve 权重映射 (6 sleeve 版本)
+# ---------------------------------------------------------------------------
+allocator:
+  min_sleeves: 2
+  sleeve_weight_cap: 0.50
+  sleeve_weight_floor: 0.02
+  max_weekly_weight_change: 0.15
+
+  # Regime → Sleeve 基础映射矩阵
+  # shock_reversal 初始低权重接入:
+  #   range_bound: 0.10 (震荡市最适合异常反转)
+  #   trend_up:    0.05
+  #   trend_down:  0.02 (趋势下跌中谨慎)
+  #   high_vol:    0.03 (高波动中谨慎)
+  #   value_rot:   0.05
+  regime_to_sleeve_weights:
+    # 趋势上涨: 动量主导 + 量价辅助
+    trend_up:
+      momentum: 0.42
+      volume_price: 0.23
+      reversal: 0.10
+      defensive: 0.10
+      value: 0.10
+      shock_reversal: 0.05
+
+    # 趋势下跌: 防御主导 + 价值/反转辅助
+    trend_down:
+      defensive: 0.44
+      value: 0.20
+      reversal: 0.19
+      momentum: 0.05
+      volume_price: 0.10
+      shock_reversal: 0.02
+
+    # 震荡: 反转主导 + 量价辅助 + shock_reversal 增强
+    range_bound:
+      reversal: 0.38
+      volume_price: 0.22
+      defensive: 0.13
+      value: 0.09
+      momentum: 0.05
+      shock_reversal: 0.10
+
+    # 高波动: 防御主导 + 反转辅助
+    high_volatility:
+      defensive: 0.48
+      reversal: 0.19
+      value: 0.15
+      volume_price: 0.10
+      momentum: 0.05
+      shock_reversal: 0.03
+
+    # 价值轮动: 价值主导 + 防御辅助
+    value_rotation:
+      value: 0.43
+      defensive: 0.19
+      reversal: 0.14
+      momentum: 0.10
+      volume_price: 0.09
+      shock_reversal: 0.05
+
+# ---------------------------------------------------------------------------
+# Factor Alignment — PIT as-of 对齐
+# ---------------------------------------------------------------------------
+factor_alignment:
+  technical_max_stale_trading_days: 5
+  fundamental_max_stale_trading_days: 63
+  fundamental_factors:
+    - ep_cs
+    - bp_cs
+    - sp_cs
+    - log_market_cap_cs

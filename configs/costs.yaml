@@ -1,0 +1,53 @@
+# code_v4 Transaction Cost Model Configuration
+# ==============================================
+# A-share realistic transaction costs for CSI 300 stocks.
+
+costs:
+  # -----------------------------------------------------------------------
+  # Explicit costs
+  # -----------------------------------------------------------------------
+  commission:
+    rate: 0.00025                # 2.5 bp (万2.5)
+    min_per_order: 5.0           # minimum 5 CNY per order
+    apply_to: "both"             # "buy", "sell", or "both"
+
+  stamp_duty:
+    rate: 0.0005                 # 5 bp (千0.5) - sell only
+    apply_to: "sell"
+
+  transfer_fee:
+    rate: 0.00002                # 0.2 bp (万0.2)
+    apply_to: "both"
+
+  # -----------------------------------------------------------------------
+  # Implicit costs (slippage / market impact)
+  # -----------------------------------------------------------------------
+  slippage:
+    model: "fixed_bps"           # "fixed_bps", "aligned_with_volume", or "none"
+    basis_points: 5.0            # 5 bp fixed slippage assumption
+    # Volume-aligned model (if model="aligned_with_volume")
+    volume_participation: 0.05   # 5% of daily volume
+    impact_coefficient: 0.1      # linear impact coefficient
+
+  # -----------------------------------------------------------------------
+  # T+1 and market microstructure
+  # -----------------------------------------------------------------------
+  execution:
+    price_type: "open"           # "open", "vwap", "close"
+    delay_days: 1                # T+1 settlement (signal at t, trade at t+1)
+    min_unit: 100                # A-share lot size (1 lot = 100 shares)
+    round_lot: true              # enforce round lot constraints
+    t1_sell_restriction: true    # cannot sell stock bought at t on day t
+
+  # -----------------------------------------------------------------------
+  # Stress test scenarios
+  # -----------------------------------------------------------------------
+  stress:
+    commission_2x:
+      commission_rate: 0.0005
+    slippage_2x:
+      slippage_bps: 10.0
+    costs_2x:
+      commission_rate: 0.0005
+      slippage_bps: 10.0
+      stamp_duty_rate: 0.001

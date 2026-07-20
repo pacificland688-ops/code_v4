@@ -1,0 +1,59 @@
+# ===========================================================================
+# Panic Reversal Factor Build Configuration
+# ===========================================================================
+# Dedicated build config for the 27 panic reversal candidates.
+# Key difference from base v4 config:
+#   - Cross-section processing is DISABLED (no neutralization, no standardization)
+#   - Missing method is "drop" (non-event stocks are 0, not industry median)
+#   - Only builds the panic_reversal category
+# ===========================================================================
+
+# Factor universe definition
+universe_config: "configs/factors_panic_reversal_universe.yaml"
+
+# Date ranges
+build:
+  validation_start: "20170101"
+  validation_end: "20241231"
+  ytd_start: "20260101"
+  ytd_end: "20260605"
+
+# Cache settings
+cache:
+  base_path: "data/parquet/factors"
+  format: "parquet"
+  compression: "zstd"
+  partition: "factor_name={factor_name}/year={year}"
+
+# PIT alignment (same as v4 base)
+pit:
+  use_ann_date: true
+  conservative_fallback: true
+  max_lag_days:
+    technical: 7
+    fundamental: 63
+    financial_statement: 120
+  conservative_lag:
+    annual_report_days: 120
+    semi_annual_report_days: 60
+    quarterly_report_days: 30
+
+# Cross-sectional processing — DISABLED for panic reversal
+# Event-driven sparse signals should not be neutralized, standardized,
+# or have missing values filled with industry medians.
+cross_section:
+  enabled: false
+  neutralize: false
+  neutralizers: []
+  neutralize_method: "ols_residual"
+  standardize: "none"
+  missing_method: "drop"
+  min_coverage: 0.0
+  min_stocks_for_cs: 10
+
+# Only build panic_reversal category
+build_order:
+  - panic_reversal
+
+# Factor-specific build parameters (all use defaults from _compute_panic_reversal)
+factor_params: {}

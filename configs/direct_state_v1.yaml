@@ -1,0 +1,211 @@
+# ===========================================================================
+# Direct State Allocator V1 Configuration — B 方案
+# ===========================================================================
+# Skips 5-class softmax regime classification.  Maps continuous PIT
+# market state features directly to sleeve multipliers.
+#
+# B1 rules (volatility/breadth → momentum, strongest statistical evidence):
+#   - High vol (volatility_state >= PIT expanding q75) → momentum × 0.50
+#   - High breadth + not high vol → momentum × 1.25
+#   - Otherwise → momentum × 1.00
+#   - Base weights: equal across available sleeves
+#
+# Sleeve definitions, composite params, and factor_alignment are shared
+# with regime.yaml for fair comparison.
+# ===========================================================================
+
+enabled: true
+
+# ---------------------------------------------------------------------------
+# Allocation mode — triggers Plan B code path
+# ---------------------------------------------------------------------------
+allocation_mode: direct_state
+
+# ---------------------------------------------------------------------------
+# Regime Detector config (feature computation only — no regime_probs used)
+# ---------------------------------------------------------------------------
+regime_detector:
+  index_code: "000300.SH"
+  trend:
+    ma_short: 60
+    ma_long: 120
+    return_windows: [20, 60, 120]
+  volatility:
+    vol_windows: [20, 60]
+    drawdown_window: 60
+  breadth:
+    ma_window: 60
+    min_stocks: 100
+  smoothing:
+    halflife: 4
+
+# ---------------------------------------------------------------------------
+# Direct State Allocator
+# ---------------------------------------------------------------------------
+direct_state_allocator:
+  # PIT threshold parameters
+  min_warmup_trading_days: 252     # retained for compat; not used directly
+  min_warmup_signal_observations: 52  # weekly signals before rules activate
+
+  # State features used for rule evaluation
+  features:
+    - volatility_state
+    - breadth_score
+    - trend_strength
+    - turnover_state
+
+  # Optional auxiliary features (degrade gracefully if missing)
+  auxiliary_features:
+    - value_growth_spread_20d
+    - size_spread_20d
+
+  # B1 Rule definitions
+  rules:
+    high_quantile: 0.75          # PIT expanding q75
+    target_sleeve: momentum      # which sleeve to adjust
+
+    # Rule: high volatility → reduce momentum
+    rule_high_vol:
+      condition: "volatility_state >= PIT_expanding_q75"
+      multiplier: 0.50
+
+    # Rule: high breadth (and not high vol) → increase momentum
+    rule_high_breadth:
+      condition: "breadth_score >= PIT_expanding_q75 AND volatility_state < PIT_expanding_q75"
+      multiplier: 1.25
+
+    # Rule: default → no adjustment
+    rule_default:
+      condition: "otherwise"
+      multiplier: 1.00
+
+  # Base sleeve weights before rule adjustment
+  base_policy: equal_weight
+
+  # Weight constraints (same schema as RegimeAllocator)
+  constraints:
+    min_sleeves: 2
+    sleeve_weight_cap: 0.50
+    sleeve_weight_floor: 0.05
+    max_weekly_weight_change: 0.15
+
+# ---------------------------------------------------------------------------
+# Strategy Sleeves — 子策略定义 (same as regime.yaml)
+# ---------------------------------------------------------------------------
+strategy_sleeves:
+  reversal:
+    factors:
+      - reversal_5_cs
+      - reversal_20_cs
+      - rsi_14_cs
+      - pv_divergence_20_cs
+
+  momentum:
+    factors:
+      - momentum_60_cs
+      - momentum_120_cs
+      - macd_12_26_9_cs
+      - pv_divergence_20_cs
+
+  defensive:
+    factors:
+      - volatility_20_cs
+      - volatility_60_cs
+      - reversal_20_cs
+
+  value:
+    factors:
+      - ep_cs
+      - bp_cs
+      - sp_cs
+
+  volume_price:
+    factors:
+      - pv_divergence_20_cs
+      - macd_12_26_9_cs
+      - momentum_60_cs
+      - volatility_20_cs
+
+# ---------------------------------------------------------------------------
+# Sleeve Composite — 子策略内部 IC 加权参数 (same as regime.yaml)
+# ---------------------------------------------------------------------------
+sleeve_composite:
+  ic_window_months: 6
+  shrinkage: 0.5
+  weight_cap: 0.50
+  min_ic_obs: 20
+  min_icir: 0.05
+  hard_cap: false
+  min_active_factors: 2
+  coverage_gate_enabled: true
+  sign_stability_check: true
+  horizon: 5
+
+# ---------------------------------------------------------------------------
+# Sleeve Performance Overlay (same as regime.yaml, disabled by default)
+# ---------------------------------------------------------------------------
+sleeve_performance_overlay:
+  enabled: false
+  lookback_months: 6
+  horizon: 5
+  min_obs: 12
+  min_stocks: 30
+  icir_weight: 0.70
+  hit_rate_weight: 0.30
+  icir_scale: 0.50
+  strength: 0.50
+  neutral_multiplier: 1.00
+  multiplier_min: 0.60
+  multiplier_max: 1.60
+
+# ---------------------------------------------------------------------------
+# Allocator config (not used by direct_state path; kept for schema compat)
+# ---------------------------------------------------------------------------
+allocator:
+  min_sleeves: 2
+  sleeve_weight_cap: 0.50
+  sleeve_weight_floor: 0.05
+  max_weekly_weight_change: 0.15
+  regime_to_sleeve_weights:
+    trend_up:
+      momentum: 0.45
+      volume_price: 0.25
+      reversal: 0.10
+      defensive: 0.10
+      value: 0.10
+    trend_down:
+      defensive: 0.45
+      value: 0.20
+      reversal: 0.20
+      momentum: 0.05
+      volume_price: 0.10
+    range_bound:
+      reversal: 0.45
+      volume_price: 0.25
+      defensive: 0.15
+      value: 0.10
+      momentum: 0.05
+    high_volatility:
+      defensive: 0.50
+      reversal: 0.20
+      value: 0.15
+      volume_price: 0.10
+      momentum: 0.05
+    value_rotation:
+      value: 0.45
+      defensive: 0.20
+      reversal: 0.15
+      momentum: 0.10
+      volume_price: 0.10
+
+# ---------------------------------------------------------------------------
+# Factor Alignment — PIT as-of 对齐 (same as regime.yaml)
+# ---------------------------------------------------------------------------
+factor_alignment:
+  technical_max_stale_trading_days: 5
+  fundamental_max_stale_trading_days: 63
+  fundamental_factors:
+    - ep_cs
+    - bp_cs
+    - sp_cs
+    - log_market_cap_cs

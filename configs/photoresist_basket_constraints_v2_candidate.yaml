@@ -1,0 +1,27 @@
+schema: photoresist_basket_constraint_candidate.v1
+candidate_id: primary_5d_weight_feasible_v2_candidate
+status: INACTIVE_RESEARCH_CANDIDATE
+base_gate_version: primary_5d_frozen_v1
+created_at: "2026-07-16"
+
+reason: >-
+  A fully invested three-stock basket cannot satisfy a 30% single-stock cap.
+  The frozen v1 implementation therefore realizes 33.33% and now reports the
+  violation explicitly. This candidate makes the constraint feasible by
+  requiring at least four eligible core components.
+
+basket_rules_override:
+  core_basket:
+    min_components: 4
+    max_single_weight: 0.30
+    insufficient_components: no_formal_basket
+
+activation_requirements:
+  - independent historical replay and threshold validation
+  - comparison against primary_5d_frozen_v1
+  - governance approval with a new gate_version
+  - no retroactive overwrite of frozen v1 journal facts
+
+live_activation:
+  enabled: false
+  trade_ready: false

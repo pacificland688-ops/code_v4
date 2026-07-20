@@ -1,0 +1,348 @@
+# ===========================================================================
+# Photoresist Theme — Point-in-Time Stock Universe v2 (2026 extension)
+# ===========================================================================
+# Successor to configs/photoresist_universe.yaml (pit v2 / research freeze).
+#
+# RULES (frozen process, see docs/photoresist_panic_live_alert_system.md):
+#   - Historical validity periods are NEVER overwritten. 2026 eligibility is
+#     added as NEW period entries with their own sources.
+#   - Each entry answers: is the business still core semiconductor
+#     photoresist, when did the information become public, and is there any
+#     business exit or material change?
+#   - Multiple period entries per ts_code MUST NOT overlap.
+#
+# 2026 review basis (as of 2026-07):
+#   - All four core names retained semiconductor photoresist as an active,
+#     growing business through 2025 (2025三季报/半年报, 2025年报 disclosed
+#     2026-04). No business exits or divestitures identified.
+#   - announcement_date marks when the supporting disclosure became public.
+#   - review_status=confirmed_desk_research: based on public periodic
+#     reports; a manual审计 pass may upgrade pit_confidence.
+# ===========================================================================
+
+universe:
+  name: photoresist_pit_v2_2026
+  universe_version: photoresist_universe_v2
+  description: "光刻胶主题 PIT 股票池 v2 — 新增2026有效区间，不覆盖历史区间"
+  last_updated: "2026-07-15"
+  status: "ACTIVE — 历史区间冻结；2026区间基于2025年报与公开公告"
+  predecessor: configs/photoresist_universe.yaml
+
+  # ── Core: semiconductor photoresist explicitly confirmed ─────────────
+  core:
+    # ---- 晶瑞电材: historical (frozen, copied verbatim from v1) ----
+    - ts_code: "300655.SZ"
+      name: "晶瑞电材"
+      pool_type: core
+      effective_start: 20170101
+      effective_end: 20251231
+      source_type: annual_report
+      source_ref: "年报:半导体光刻胶+超净高纯试剂;i线/KrF光刻胶"
+      pit_confidence: high
+      business_tier: core_photoresist
+      universe_version: photoresist_universe_v1
+
+    # ---- 晶瑞电材: 2026 extension ----
+    - ts_code: "300655.SZ"
+      name: "晶瑞电材"
+      pool_type: core
+      effective_start: 20260101
+      effective_end: 20261231
+      source_type: periodic_report
+      source_ref: >-
+        2025三季报(2025-10-31披露,PIT依据)+2025年报(2026-04复核确认)/2025半年报:光刻胶收入1.06亿元(2025H1,毛利率44.2%),
+        g/i线市占率居前,KrF量产,ArF小批量出货;业务持续,无退出迹象
+      announcement_date: 20251031
+      pit_confidence: high
+      business_tier: core_photoresist
+      universe_version: photoresist_universe_v2
+      review_status: confirmed_desk_research
+      evidence:
+        document_id: "JR-2025Q3"
+        document_title: "晶瑞电材2025年第三季度报告"
+        publication_date: 20251031
+        source_url: "https://www.cninfo.com.cn (定期报告,待归档)"
+        document_sha256: null   # 归档后填写
+        reviewer: null          # 正式审核人,approved前必填
+        reviewed_at: null
+
+    # ---- 南大光电: historical (frozen) ----
+    - ts_code: "300346.SZ"
+      name: "南大光电"
+      pool_type: core
+      effective_start: 20170101
+      effective_end: 20251231
+      source_type: annual_report
+      source_ref: "年报:MO源+ArF光刻胶研发及产业化"
+      pit_confidence: high
+      business_tier: core_photoresist
+      universe_version: photoresist_universe_v1
+
+    # ---- 南大光电: 2026 extension ----
+    - ts_code: "300346.SZ"
+      name: "南大光电"
+      pool_type: core
+      effective_start: 20260101
+      effective_end: 20261231
+      source_type: periodic_report
+      source_ref: >-
+        2025三季报(2025-10-31披露,PIT依据)+2025年报(2026-04复核确认)/2025三季报:国内唯一规模量产ArF光刻胶,
+        中芯国际/长江存储量产供应,宁波基地产能扩至500吨;业务持续
+      announcement_date: 20251031
+      pit_confidence: high
+      business_tier: core_photoresist
+      universe_version: photoresist_universe_v2
+      review_status: confirmed_desk_research
+      evidence:
+        document_id: "ND-2025Q3"
+        document_title: "南大光电2025年第三季度报告"
+        publication_date: 20251031
+        source_url: "https://www.cninfo.com.cn (定期报告,待归档)"
+        document_sha256: null   # 归档后填写
+        reviewer: null          # 正式审核人,approved前必填
+        reviewed_at: null
+
+    # ---- 彤程新材: historical (frozen) ----
+    - ts_code: "603650.SH"
+      name: "彤程新材"
+      pool_type: core
+      effective_start: 20200701
+      effective_end: 20251231
+      source_type: announcement
+      source_ref: "公告:2020年收购北京科华微电子(半导体光刻胶龙头)"
+      pit_confidence: high
+      business_tier: core_photoresist
+      universe_version: photoresist_universe_v1
+
+    # ---- 彤程新材: 2026 extension ----
+    - ts_code: "603650.SH"
+      name: "彤程新材"
+      pool_type: core
+      effective_start: 20260101
+      effective_end: 20261231
+      source_type: periodic_report
+      source_ref: >-
+        2025三季报(2025-10-31披露,PIT依据)+2025年报(2026-04复核确认)/2025半年报:半导体光刻胶收入约2亿元(2025H1,+50%),
+        KrF国内市占率超40%,ArF通过28nm验证量产,北京科华为SEMI全球八强;业务持续
+      announcement_date: 20251031
+      pit_confidence: high
+      business_tier: core_photoresist
+      universe_version: photoresist_universe_v2
+      review_status: confirmed_desk_research
+      evidence:
+        document_id: "TC-2025Q3"
+        document_title: "彤程新材2025年第三季度报告"
+        publication_date: 20251031
+        source_url: "https://www.cninfo.com.cn (定期报告,待归档)"
+        document_sha256: null   # 归档后填写
+        reviewer: null          # 正式审核人,approved前必填
+        reviewed_at: null
+
+    # ---- 上海新阳: historical (frozen) ----
+    - ts_code: "300236.SZ"
+      name: "上海新阳"
+      pool_type: core
+      effective_start: 20180101
+      effective_end: 20251231
+      source_type: annual_report
+      source_ref: "年报:半导体材料(光刻胶+电镀液+清洗液);KrF光刻胶"
+      pit_confidence: medium
+      business_tier: core_photoresist
+      universe_version: photoresist_universe_v1
+
+    # ---- 上海新阳: 2026 extension ----
+    - ts_code: "300236.SZ"
+      name: "上海新阳"
+      pool_type: core
+      effective_start: 20260101
+      effective_end: 20261231
+      source_type: periodic_report
+      source_ref: >-
+        2025三季报(2025-10-31披露,PIT依据)+2025年报(2026-04复核确认)/2025半年报:集成电路材料收入6.84亿元(2025H1,占76%),
+        i线/KrF/ArF干法/浸没式平台齐备,KrF厚膜胶已销售;业务持续
+      announcement_date: 20251031
+      pit_confidence: medium
+      business_tier: core_photoresist
+      universe_version: photoresist_universe_v2
+      review_status: confirmed_desk_research
+      evidence:
+        document_id: "XY-2025Q3"
+        document_title: "上海新阳2025年第三季度报告"
+        publication_date: 20251031
+        source_url: "https://www.cninfo.com.cn (定期报告,待归档)"
+        document_sha256: null   # 归档后填写
+        reviewer: null          # 正式审核人,approved前必填
+        reviewed_at: null
+
+  # ── Adjacent / mapping: historical ranges only (NOT extended to 2026) ──
+  # The live alert system uses core only; adjacent/mapping 2026 extension
+  # requires its own review before use.
+  adjacent:
+    - ts_code: "300576.SZ"
+      name: "容大感光"
+      pool_type: adjacent
+      effective_start: 20170101
+      effective_end: 20251231
+      source_type: annual_report
+      source_ref: "年报:PCB光刻胶为主,半导体光刻胶占比小;以PCB感光油墨为核心"
+      pit_confidence: medium
+      universe_version: photoresist_universe_v1
+
+    - ts_code: "300398.SZ"
+      name: "飞凯材料"
+      pool_type: adjacent
+      effective_start: 20170101
+      effective_end: 20251231
+      source_type: annual_report
+      source_ref: "年报:显示面板光刻胶+紫外固化材料+电子化学品"
+      pit_confidence: high
+      universe_version: photoresist_universe_v1
+
+    - ts_code: "300537.SZ"
+      name: "广信材料"
+      pool_type: adjacent
+      effective_start: 20170101
+      effective_end: 20251231
+      source_type: annual_report
+      source_ref: "年报:PCB感光油墨+光刻胶+消费电子涂料"
+      pit_confidence: high
+      universe_version: photoresist_universe_v1
+
+    - ts_code: "300429.SZ"
+      name: "强力新材"
+      pool_type: adjacent
+      effective_start: 20170101
+      effective_end: 20251231
+      source_type: annual_report
+      source_ref: "年报:PCB光刻胶用光引发剂+光固化材料"
+      pit_confidence: medium
+      universe_version: photoresist_universe_v1
+
+    - ts_code: "002584.SZ"
+      name: "西陇科学"
+      pool_type: adjacent
+      effective_start: 20170101
+      effective_end: 20251231
+      source_type: annual_report
+      source_ref: "年报:电子化学品+光刻胶配套试剂(剥离液/显影液)"
+      pit_confidence: medium
+      universe_version: photoresist_universe_v1
+
+  mapping:
+    - ts_code: "002409.SZ"
+      name: "雅克科技"
+      pool_type: mapping
+      effective_start: 20180101
+      effective_end: 20251231
+      source_type: annual_report
+      source_ref: "年报:半导体化学材料(前驱体/SOD);光刻胶通过收购切入,非主业"
+      pit_confidence: medium
+      universe_version: photoresist_universe_v1
+
+    - ts_code: "688019.SH"
+      name: "安集科技"
+      pool_type: mapping
+      effective_start: 20190722
+      effective_end: 20251231
+      source_type: annual_report
+      source_ref: "招股书/年报:CMP抛光液+光刻胶辅助去除剂;非光刻胶主产业链"
+      pit_confidence: medium
+      universe_version: photoresist_universe_v1
+
+    - ts_code: "688126.SH"
+      name: "沪硅产业"
+      pool_type: mapping
+      effective_start: 20200420
+      effective_end: 20251231
+      source_type: annual_report
+      source_ref: "招股书:半导体硅片(光刻胶上游基材,非光刻胶本身)"
+      pit_confidence: medium
+      universe_version: photoresist_universe_v1
+
+    - ts_code: "688233.SH"
+      name: "神工股份"
+      pool_type: mapping
+      effective_start: 20200221
+      effective_end: 20251231
+      source_type: annual_report
+      source_ref: "招股书:刻蚀用硅材料(光刻下游工艺,非光刻胶)"
+      pit_confidence: low
+      universe_version: photoresist_universe_v1
+
+    - ts_code: "300054.SZ"
+      name: "鼎龙股份"
+      pool_type: mapping
+      effective_start: 20180101
+      effective_end: 20251231
+      source_type: annual_report
+      source_ref: "年报:CMP抛光垫+半导体材料;打印耗材为主营"
+      pit_confidence: medium
+      universe_version: photoresist_universe_v1
+
+    - ts_code: "688012.SH"
+      name: "中微公司"
+      pool_type: mapping
+      effective_start: 20190722
+      effective_end: 20251231
+      source_type: annual_report
+      source_ref: "招股书:等离子体刻蚀设备(光刻下游工艺设备)"
+      pit_confidence: medium
+      universe_version: photoresist_universe_v1
+
+# ── Basket construction rules (unchanged from v1 — frozen) ──────────────
+basket_rules:
+  core_basket:
+    description: "core 股票等权；30%为冻结名义上限，三成分时不可满足并显式审计"
+    pool_types: [core]
+    min_pit_confidence: medium
+    weight_scheme: equal_weight
+    max_single_weight: 0.30
+    min_components: 3
+
+  broad_basket:
+    description: "core + adjacent，core 权重优先，adjacent 降权"
+    pool_types: [core, adjacent]
+    min_pit_confidence: medium
+    weight_scheme: tiered
+    core_weight_multiplier: 2.0
+    max_single_weight: 0.25
+    min_components: 3
+
+  mapping_sentiment_index:
+    description: "mapping 股票只做情绪观察，不作为事件主依据"
+    pool_types: [mapping]
+    min_pit_confidence: low
+    weight_scheme: equal_weight
+    research_only: true
+
+# ── Benchmark indices ────────────────────────────────────────────────────
+benchmarks:
+  market:
+    - code: "000300.SH"
+      name: "沪深300"
+    - code: "000985.CSI"
+      name: "中证全指"
+  growth:
+    - code: "399006.SZ"
+      name: "创业板指"
+  semiconductor:
+    - code: "931865.CSI"
+      name: "中证半导体产业指数"
+      primary: true
+
+# ── Eligibility filters (unchanged from v1 — frozen) ─────────────────────
+eligibility:
+  min_list_days: 120
+  min_daily_amount_20d: 1.0e8
+  amount_unit: thousand_cny
+  exclude_st: true
+  exclude_suspend: true
+  exclude_limit_down_event: true
+  exclude_consecutive_limit_down: true
+  exclude_limit_up_entry: true
+
+# ── Event clustering (unchanged from v1 — frozen) ────────────────────────
+event_clustering:
+  max_gap_trading_days: 5
+
+# ===========================================================================

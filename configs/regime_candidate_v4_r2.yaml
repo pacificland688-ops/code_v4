@@ -1,0 +1,167 @@
+# ===========================================================================
+# Regime Candidate V4 R2 — Gate-Compliant Sleeve Configuration
+# ===========================================================================
+#
+# Generation: 2026-06-17 (updated to reflect M4 gate re-run of 2026-06-16)
+# Candidate pool: configs/factors_candidate_v4_r2.yaml
+#
+# ⚠️ BLOCKING STATUS: NO alpha factors achieve gate PASS.
+#    All sleeves are empty. This is NOT a valid alpha strategy.
+#    The existing validation runs (candidate_v4_r2) were produced before
+#    the gate re-run when volatility_60_cs was still WATCH_NEUTRAL_ONLY.
+#    Per plan §12.2 rule 6: defensive-only strategy → NO formal alpha validation.
+#
+# Design rules (per strategy_v4_r2_remediation_development_plan.md §12.2):
+#   1. All factors in sleeves must exist in r2 enabled_factors or be
+#      explicitly marked as neutralizer/risk reference.
+#   2. WATCH factors only in defensive sleeve (none currently qualify).
+#   3. performance_overlay disabled by default (verify alpha first).
+#   4. No references to FAIL or DATA_MISSING factors.
+#   5. Empty sleeves must have weight 0 in all regimes.
+#   6. Defensive-only sleeve config may not enter formal alpha validation.
+# ============================================================================
+enabled: true
+
+regime_detector:
+  index_code: "000300.SH"
+  trend:
+    ma_short: 60
+    ma_long: 120
+    return_windows: [20, 60, 120]
+  volatility:
+    vol_windows: [20, 60]
+    drawdown_window: 60
+  breadth:
+    ma_window: 60
+    min_stocks: 100
+  smoothing:
+    halflife: 4
+
+strategy_sleeves:
+  # ------------------------------------------------------------------
+  # Defensive: Was volatility_60_cs (now FAIL in gate re-run).
+  # Empty pending gate PASS factors. NOT a valid alpha sleeve.
+  # ------------------------------------------------------------------
+  defensive:
+    factors: []
+    # Previously included: volatility_60_cs (now gate FAIL — neutralization LOW_COVERAGE)
+    # log_market_cap_cs is FAIL and is a neutralizer, not alpha
+
+  # ------------------------------------------------------------------
+  # Growth: All growth factors FAIL gate (despite dup=0 fix).
+  # Sleeve empty pending improved PIT data coverage and re-evaluation.
+  # ------------------------------------------------------------------
+  growth:
+    factors: []
+    # revenue_growth_ttm_cs, profit_growth_ttm_cs: dup=0 but coverage 0%, ICIR < 0.20
+    # earnings_acceleration_cs: only 1 stock after PIT filter
+    # growth_stability_8q_cs: only 5 stocks after PIT filter
+
+  # ------------------------------------------------------------------
+  # Value: All legacy value factors FAIL gate (LEAKAGE_METADATA_MISSING)
+  # Sleeve empty pending data_lag_days config fix.
+  # ------------------------------------------------------------------
+  value:
+    factors: []
+    # ep_cs, bp_cs, sp_cs, industry_relative_ep_cs, industry_relative_bp_cs — all FAIL
+
+  # ------------------------------------------------------------------
+  # Momentum: All V4 momentum factors FAIL gate
+  # Sleeve empty. All factors fail ICIR/spread/excess thresholds.
+  # ------------------------------------------------------------------
+  momentum:
+    factors: []
+    # All FAIL: momentum_60_skip5_cs, momentum_120_skip20_cs,
+    # risk_adjusted_momentum_60_cs, volume_confirmed_momentum_cs,
+    # trend_quality_cs, industry_relative_momentum_60_cs
+
+  # ------------------------------------------------------------------
+  # Reversal: reversal_5_cs FAIL gate, pv_divergence_20_cs FAIL gate
+  # Sleeve empty.
+  # ------------------------------------------------------------------
+  reversal:
+    factors: []
+    # reversal_5_cs FAIL (mean_rank_ic=0.004), pv_divergence_20_cs FAIL (icir=0.176)
+
+  # ------------------------------------------------------------------
+  # Volume/Price: All relevant factors FAIL gate
+  # Sleeve empty.
+  # ------------------------------------------------------------------
+  volume_price:
+    factors: []
+    # All FAIL: pv_divergence_20_cs, volume_confirmed_momentum_cs,
+    # trend_quality_cs, industry_relative_momentum_60_cs
+
+sleeve_composite:
+  ic_window_months: 12
+  shrinkage: 0.3
+  weight_cap: 0.50
+  min_ic_obs: 20
+  min_icir: 0.0
+  hard_cap: false
+  min_active_factors: 1
+  coverage_gate_enabled: false
+  sign_stability_check: true
+  horizon: 5
+
+sleeve_performance_overlay:
+  enabled: false  # Per plan §6.4: verify alpha and sleeve first, overlay later
+
+allocator:
+  min_sleeves: 0  # No sleeves have gate-compliant factors; all are empty
+  sleeve_weight_cap: 1.00
+  sleeve_weight_floor: 0.00
+  max_weekly_weight_change: 0.15
+  # CRITICAL: All sleeves are empty — no valid alpha strategy exists.
+  # All weights are zero. This is explicitly a NO-ALPHA-SOURCE configuration.
+  # When gate produces PASS factors, restore diversified weights.
+  regime_to_sleeve_weights:
+    trend_up:
+      defensive: 0.00
+      growth: 0.00
+      momentum: 0.00
+      value: 0.00
+      volume_price: 0.00
+      reversal: 0.00
+    trend_down:
+      defensive: 0.00
+      growth: 0.00
+      momentum: 0.00
+      value: 0.00
+      volume_price: 0.00
+      reversal: 0.00
+    range_bound:
+      defensive: 0.00
+      growth: 0.00
+      momentum: 0.00
+      value: 0.00
+      volume_price: 0.00
+      reversal: 0.00
+    high_volatility:
+      defensive: 0.00
+      growth: 0.00
+      momentum: 0.00
+      value: 0.00
+      volume_price: 0.00
+      reversal: 0.00
+    value_rotation:
+      defensive: 0.00
+      growth: 0.00
+      momentum: 0.00
+      value: 0.00
+      volume_price: 0.00
+      reversal: 0.00
+
+factor_alignment:
+  technical_max_stale_trading_days: 5
+  fundamental_max_stale_trading_days: 63
+  fundamental_factors: []
+  # All fundamental factors are currently FAIL or have empty cache.
+  # Factors pending re-evaluation after PIT improvements:
+  # - revenue_growth_ttm_cs (dup=0, awaiting gate re-eval)
+  # - profit_growth_ttm_cs (dup=0, awaiting gate re-eval)
+  # - earnings_acceleration_cs (awaiting gate re-eval with relaxed PIT)
+  # - growth_stability_8q_cs (awaiting gate re-eval with relaxed PIT)
+  # - log_market_cap_cs (neutralizer only, gate FAIL)
+  # Value factors (all currently FAIL — LEAKAGE_METADATA_MISSING):
+  # - ep_cs, bp_cs, sp_cs, industry_relative_ep_cs, industry_relative_bp_cs

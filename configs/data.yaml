@@ -1,0 +1,151 @@
+# code_v4 Data Pipeline Configuration
+# =====================================
+# Memory-constrained data pipeline for CSI 300 cross-sectional multi-factor strategy.
+# All data access enforces predicate pushdown; full-table scans are prohibited.
+
+# ---------------------------------------------------------------------------
+# Runtime: memory budget and batch sizing
+# ---------------------------------------------------------------------------
+runtime:
+  max_memory_gb: 8
+  stock_batch_size: 80           # per-batch stock count for per-stock factor calc
+  date_chunk_months: 3           # per-chunk date range for cross-section processing
+  use_float32: true              # default float precision for prices/returns/factors
+  parquet_row_group_size: 200000 # rows per row group in parquet files
+  gc_after_chunk: true           # force gc.collect() after each chunk
+  memory_warning_threshold_gb: 6 # log warning when RSS exceeds this
+
+# ---------------------------------------------------------------------------
+# Parquet storage: hive-partitioned layout
+# ---------------------------------------------------------------------------
+storage:
+  base_path: "data/parquet"      # relative to code_v4 root
+
+  # Partition scheme for each data type
+  partitioning:
+    prices_raw:     "year=${year}/month=${month}"
+    prices_adj:     "year=${year}/month=${month}"
+    adj_factor:     "year=${year}"
+    daily_basic:    "year=${year}/month=${month}"
+    index_weight:   "year=${year}"
+    stock_status:   ""            # single file, small
+    industry_pit:   "year=${year}"
+    limit_status:   "year=${year}/month=${month}"
+    suspend_status: "year=${year}/month=${month}"
+    # Factor outputs
+    factors:        "factor_name=${factor_name}/year=${year}"
+    processed:      "date_bucket=${date_bucket}"  # e.g. 2024Q1
+
+  # Compression
+  compression: "zstd"
+  compression_level: 3
+
+# ---------------------------------------------------------------------------
+# Dtype map: enforce memory-efficient types
+# ---------------------------------------------------------------------------
+dtypes:
+  # Identifiers
+  ts_code:         "category"
+  industry_code:   "category"
+  industry_name:   "category"
+  index_code:      "category"
+
+  # Dates stored as int32 YYYYMMDD for efficient filtering
+  trade_date:      "int32"
+  ann_date:        "int32"
+  list_date:       "int32"
+  delist_date:     "int32"
+
+  # Prices: float32 for memory, float64 only for cumulative/compounding
+  open:            "float32"
+  high:            "float32"
+  low:             "float32"
+  close:           "float32"
+  adj_open:        "float32"
+  adj_high:        "float32"
+  adj_low:         "float32"
+  adj_close:       "float32"
+  adj_factor:      "float32"
+  pre_close:       "float32"
+
+  # Volume / amount: float64 for precision
+  vol:             "float64"
+  amount:          "float64"
+
+  # Fundamentals
+  total_mv:        "float64"
+  circ_mv:         "float64"
+  pe:              "float32"
+  pb:              "float32"
+  ps:              "float32"
+  turnover_rate:   "float32"
+
+  # Flags
+  suspend_flag:    "bool"
+  is_st:           "bool"
+  can_buy:         "bool"
+  can_sell:        "bool"
+  can_hold:        "bool"
+
+  # Weights
+  weight:          "float32"
+
+  # Limits
+  up_limit:        "float32"
+  down_limit:      "float32"
+
+# ---------------------------------------------------------------------------
+# Tushare API configuration
+# ---------------------------------------------------------------------------
+tushare:
+  # Rate limiting (Tushare Pro free tier: ~200 calls/min, higher tiers more)
+  max_requests_per_minute: 180
+  max_retries: 5
+  retry_base_seconds: 1.0
+  retry_max_seconds: 60.0
+  retry_backoff: 2.0          # exponential backoff multiplier
+
+  # Batch sizes for API calls
+  ts_code_batch_size: 500     # max ts_codes per request
+  date_batch_size: 30         # days per incremental pull
+
+  # Incremental update window (days)
+  adj_factor_lookback_days: 60  # re-pull adj_factor for recent window on update
+
+# ---------------------------------------------------------------------------
+# Point-in-time alignment
+# ---------------------------------------------------------------------------
+pit:
+  # Universe: index_weight is monthly; forward-fill to daily
+  index_weight_frequency: "monthly"
+  index_weight_fill_method: "ffill"
+
+  # PIT availability rules for index_weight constituent snapshots
+  index_weight_availability_lag_days: 1     # snapshots available next trading day
+  index_weight_effective_rule: "next_trade_day_after_snapshot"
+  # Conservative: month-end snapshot NOT usable on its own date.
+  # e.g., 2016-01-29 snapshot usable on 2016-02-01 (next trade day).
+
+  # Industry: most recent classification known at signal_date
+  industry_frequency: "daily"
+  industry_lag_days: 0        # industry changes effective immediately when published
+
+  # Fundamentals: ann_date <= signal_date, latest fiscal period
+  fundamental_use_ann_date: true
+  fundamental_max_lag_months: 8  # if no filing within 8 months of period end, exclude
+
+  # IPO filter: exclude stocks listed fewer than N calendar days
+  ipo_min_days: 60
+
+  # ST filter
+  exclude_st: true             # exclude ST/*ST stocks from universe
+  st_lookback_days: 0          # ST status effective immediately
+
+# ---------------------------------------------------------------------------
+# Benchmark
+# ---------------------------------------------------------------------------
+benchmark:
+  index_code: "000300.SH"
+  index_name: "CSI 300"
+  # For equal-weight benchmark: use PIT constituents, equal weight
+  use_equal_weight_constituent_benchmark: true

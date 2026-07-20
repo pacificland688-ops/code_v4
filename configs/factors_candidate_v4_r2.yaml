@@ -1,0 +1,301 @@
+# ===========================================================================
+# Factors Candidate V4 R2 — Data-Clean Gate-Compliant Candidate Pool
+# ===========================================================================
+#
+# Generation: 2026-06-17 (updated to reflect M4 gate re-run of 2026-06-16)
+# Gate source: outputs/analysis/factor_quality_rebuild_v4/factor_quality_gate.csv
+# Input audit: outputs/analysis/v4_alpha_inputs/audit_summary.csv
+#
+# Selection rules (per strategy_v4_r2_remediation_development_plan.md §11-12):
+#   1. Input audit PASS  — required for all factors in enabled_factors
+#   2. Gate PASS         — required for alpha factors
+#   3. WATCH_NEUTRAL_ONLY — defensive/risk only, must have manual justification
+#   4. FAIL / DATA_MISSING / input audit FAIL — excluded from enabled_factors
+#
+# ⚠️ BLOCKING STATUS: As of 2026-06-16 gate re-run, NO factor achieves gate PASS.
+#    All 49 evaluated factors are FAIL. Growth factor duplicate keys are fixed
+#    (dup=0), but coverage and IC metrics still fail gate thresholds.
+#    Strategy assembly is BLOCKED per plan §11 hard gate:
+#    "若 PASS alpha 因子不足，停止策略组装".
+#
+# IMPORTANT: This file is generated from gate output. Do NOT hand-edit the
+# enabled_factors list — re-run the candidate pool generation when the gate
+# is updated.
+# ============================================================================
+
+factors:
+  # --- Legacy V2/V3 value factors ---
+  ep:
+    type: fundamental
+    category: value
+    description: "Earnings-to-price = 1/PE"
+    data_fields: [pe]
+    sign: 1
+    gate_status: FAIL  # LEAKAGE_METADATA_MISSING (data_lag_days=0)
+    gate_detail: "Requires data_lag_days config fix before re-evaluation"
+
+  bp:
+    type: fundamental
+    category: value
+    description: "Book-to-price = 1/PB"
+    data_fields: [pb]
+    sign: 1
+    gate_status: FAIL  # LEAKAGE_METADATA_MISSING (data_lag_days=0)
+    gate_detail: "Requires data_lag_days config fix before re-evaluation"
+
+  sp:
+    type: fundamental
+    category: value
+    description: "Sales-to-price = 1/PS"
+    data_fields: [ps]
+    sign: 1
+    gate_status: FAIL  # LEAKAGE_METADATA_MISSING (data_lag_days=0)
+    gate_detail: "Requires data_lag_days config fix before re-evaluation"
+
+  reversal_5:
+    type: technical
+    category: reversal
+    description: "5-day short-term reversal"
+    data_fields: [adj_close]
+    window: 5
+    sign: 1
+    gate_status: FAIL  # mean_rank_ic=0.004, icir=0.016, 14 failures
+    gate_detail: "raw & neutral both fail IC/ICIR/spread/excess thresholds"
+
+  pv_divergence_20:
+    type: technical
+    category: price_volume
+    description: "Price-volume divergence"
+    data_fields: [adj_close, vol]
+    window: 20
+    sign: 1
+    gate_status: FAIL  # icir=0.176, 12 failures
+    gate_detail: "raw & neutral both fail ICIR/spread/excess thresholds"
+
+  volatility_60:
+    type: technical
+    category: volatility
+    description: "60-day volatility"
+    data_fields: [adj_close]
+    window: 60
+    sign: -1
+    gate_status: FAIL  # Was WATCH_NEUTRAL_ONLY in r1; now FAIL — neutralization LOW_COVERAGE (5.1% < 70%)
+    gate_detail: "neutralization invalid: coverage 5.1% < 70%; [raw] pos_excess_years=2/4 < 3"
+
+  log_market_cap:
+    type: fundamental
+    category: size
+    role: neutralizer
+    description: "Log total market cap"
+    data_fields: [total_mv]
+    sign: -1
+    gate_status: FAIL  # icir=0.045, low coverage; used as neutralizer only, NOT as alpha
+    gate_detail: "icir=0.113 raw, 0.045 neutral; coverage 0% < 80%"
+
+  # --- V4 Growth factors (duplicate fix applied in V4-r2, gate re-run 2026-06-16) ---
+  revenue_growth_ttm_cs:
+    type: fundamental
+    category: growth
+    description: "Revenue TTM growth rate (PIT dedup fixed — dup=0)"
+    sign_hint: positive
+    gate_status: FAIL  # Gate re-run 2026-06-16: coverage 0% < 80%, direction audit fail, raw icir=0.069
+    gate_detail: "Dedup fixed (dup=0). Gate still FAIL: no valid IC calibration, coverage 0%, raw icir=0.069 < 0.200"
+
+  profit_growth_ttm_cs:
+    type: fundamental
+    category: growth
+    description: "Net profit TTM growth rate (PIT dedup fixed — dup=0)"
+    sign_hint: positive
+    gate_status: FAIL  # Gate re-run 2026-06-16: coverage 0% < 80%, raw mean_rank_ic=0.010 borderline
+    gate_detail: "Dedup fixed (dup=0). Gate still FAIL: coverage 0%, raw icir=0.069 < 0.200, pos_ic_years=1/4"
+
+  growth_stability_8q_cs:
+    type: fundamental
+    category: growth
+    description: "8-quarter earnings stability (negative std, PIT dedup fixed — dup=0)"
+    sign_hint: positive
+    gate_status: FAIL  # Gate re-run 2026-06-16: insufficient data, coverage 0.3%, no valid IC
+    gate_detail: "Dedup fixed (dup=0). Gate FAIL: only 5 stocks after PIT filter, coverage 0.3%, no valid quantile data"
+
+  earnings_acceleration_cs:
+    type: fundamental
+    category: growth
+    description: "Earnings acceleration (2nd derivative, PIT dedup fixed — dup=0)"
+    sign_hint: positive
+    gate_status: FAIL  # Gate re-run 2026-06-16: insufficient data, coverage 0.3%, no valid IC
+    gate_detail: "Dedup fixed (dup=0). Gate FAIL: only 1 stock after PIT filter, coverage 0.3%, no valid quantile data"
+
+  # --- V4 Risk-Adjusted Momentum factors ---
+  momentum_60_skip5_cs:
+    type: technical
+    category: risk_adj_momentum
+    description: "60-day momentum with 5-day skip"
+    sign_hint: positive
+    gate_status: FAIL  # icir=0.103 raw, 0.084 neutral, 8 failures
+    gate_detail: "raw icir=0.103 < 0.200; neutral icir=0.084 < 0.200; pos_excess_years=2/4"
+
+  momentum_120_skip20_cs:
+    type: technical
+    category: risk_adj_momentum
+    description: "120-day momentum with 20-day skip"
+    sign_hint: positive
+    gate_status: FAIL  # mean_rank_ic=0.002 raw, -0.018 neutral, 12 failures
+    gate_detail: "raw mean_rank_ic=0.002 < 0.010; neutral mean_rank_ic=-0.018 < 0.010"
+
+  risk_adjusted_momentum_60_cs:
+    type: technical
+    category: risk_adj_momentum
+    description: "60-day risk-adjusted momentum"
+    sign_hint: positive
+    gate_status: FAIL  # icir=0.120 raw, 0.109 neutral, 7 failures
+    gate_detail: "raw icir=0.120 < 0.200; max_year_contrib=84% > 60%"
+
+  volume_confirmed_momentum_cs:
+    type: technical
+    category: risk_adj_momentum
+    description: "Volume-confirmed momentum"
+    sign_hint: positive
+    gate_status: FAIL  # icir=0.033 raw, -0.499 neutral, 14 failures
+    gate_detail: "raw icir=0.033 < 0.200; neutral icir=-0.499 < 0.200 (worse after neutralization)"
+
+  trend_quality_cs:
+    type: technical
+    category: risk_adj_momentum
+    description: "Trend quality score"
+    sign_hint: positive
+    gate_status: FAIL  # icir=0.122 raw, 0.017 neutral, 11 failures
+    gate_detail: "raw icir=0.122 < 0.200; neutral icir=0.017 < 0.200; max_year_contrib=908% > 60%"
+
+  # --- V4 Industry Relative factors ---
+  industry_relative_ep_cs:
+    type: fundamental
+    category: industry_relative
+    description: "Industry-relative EP"
+    sign_hint: positive
+    gate_status: FAIL  # LEAKAGE_METADATA_MISSING (data_lag_days=0)
+    gate_detail: "Requires data_lag_days config fix before re-evaluation"
+
+  industry_relative_bp_cs:
+    type: fundamental
+    category: industry_relative
+    description: "Industry-relative BP"
+    sign_hint: positive
+    gate_status: FAIL  # LEAKAGE_METADATA_MISSING (data_lag_days=0)
+    gate_detail: "Requires data_lag_days config fix before re-evaluation"
+
+  industry_relative_momentum_60_cs:
+    type: technical
+    category: industry_relative
+    description: "Industry-relative 60-day momentum"
+    sign_hint: positive
+    gate_status: FAIL  # mean_rank_ic=-0.006 raw, -0.012 neutral, 12 failures
+    gate_detail: "raw mean_rank_ic=-0.006 < 0.010; neutral mean_rank_ic=-0.012 < 0.010"
+
+# ===========================================================================
+# Candidate policy (hard gate enforcement)
+# ===========================================================================
+# formal_candidate: true means this config targets formal validation.
+# When true AND enabled_factors is empty, run_research.py MUST abort.
+#
+# ⚠️ STATUS 2026-06-19: BLOCKED — NO_ALPHA_SOURCE
+#   Gate re-evaluation confirms ZERO PASS alpha factors (49 FAIL, 14 DATA_MISSING).
+#   formal_candidate is set to false to allow diagnostic inspection.
+#   When >= 3 factors achieve gate PASS, set formal_candidate back to true.
+candidate_policy:
+  formal_candidate: false
+  blocked_reason: "NO_ALPHA_SOURCE: ZERO gate-PASS alpha factors as of 2026-06-18 gate run"
+  require_non_empty_enabled_factors: true
+  min_gate_pass_alpha_factors: 3
+
+# ===========================================================================
+# Enabled factors: input-audit-PASS + gate-PASS (with documented WATCH risk)
+# ===========================================================================
+enabled_factors:
+  # ⚠️ NO_ALPHA_SOURCE_FOUND:
+  # As of 2026-06-16 gate re-run, ZERO factors achieve gate PASS.
+  #   - Growth factors: dup fixed (dup=0) but coverage < 1%, ICIR < 0.20
+  #   - Value factors: LEAKAGE_METADATA_MISSING — needs data_lag_days config fix
+  #   - Momentum factors: all FAIL ICIR/spread/excess thresholds
+  #   - volatility_60_cs: neutralization LOW_COVERAGE → gate FAIL
+  #
+  # Strategy assembly is BLOCKED per remediation plan §11:
+  #   "PASS alpha factors >= 3 才允许进入候选池重建"
+  #   "PASS alpha factors >= 5 才建议进入正式冻结验证"
+  #
+  # Next steps to unblock:
+  #   1. Fix growth factor coverage: relax PIT data requirements (done in R2)
+  #      and rebuild cache → re-run gate
+  #   2. Fix value factor LEAKAGE_METADATA_MISSING: add data_lag_days to config
+  #   3. Fix volatility_60_cs neutralization: ensure sufficient stock coverage
+  #   4. Consider factor definition improvements (composite, sector-neutral)
+  #
+  # Currently the strategy cannot form a valid alpha sleeve.
+  # The existing validation runs (candidate_v4_r2) use only
+  # volatility_60_cs in defensive sleeve — this is NOT an alpha strategy.
+
+  []
+
+# ===========================================================================
+# Disabled factors with rationale
+# ===========================================================================
+disabled_factors:
+  ep_cs: "FAIL (LEAKAGE_METADATA_MISSING) — needs data_lag_days config fix"
+  bp_cs: "FAIL (LEAKAGE_METADATA_MISSING) — needs data_lag_days config fix"
+  sp_cs: "FAIL (LEAKAGE_METADATA_MISSING) — needs data_lag_days config fix"
+  reversal_5_cs: "FAIL (mean_rank_ic=0.004, icir=0.016, 14 gate failures)"
+  reversal_20_cs: "FAIL (ICIR < 0.20; redundant with reversal_5_cs)"
+  pv_divergence_20_cs: "FAIL (icir=0.176, 12 failures)"
+  momentum_60_cs: "Replaced by momentum_60_skip5_cs"
+  momentum_120_cs: "Replaced by momentum_120_skip20_cs"
+  macd_12_26_9_cs: "FAIL (ICIR < 0.06)"
+  rsi_14_cs: "FAIL (ICIR < 0.15)"
+  volatility_60_cs: "FAIL (neutralization LOW_COVERAGE=5.1% < 70%; raw pos_excess_years=2/4 < 3)"
+  log_market_cap_cs: "FAIL (icir=0.045 neutral, coverage 0%) — neutralizer only"
+  momentum_60_skip5_cs: "FAIL (icir=0.103 raw, 0.084 neutral, 8 failures)"
+  momentum_120_skip20_cs: "FAIL (mean_rank_ic=0.002 raw, 12 failures)"
+  risk_adjusted_momentum_60_cs: "FAIL (icir=0.120 raw, max_year_contrib=84%)"
+  volume_confirmed_momentum_cs: "FAIL (icir=0.033 raw, -0.499 neutral, 14 failures)"
+  trend_quality_cs: "FAIL (icir=0.122 raw, max_year_contrib=908%)"
+  industry_relative_ep_cs: "FAIL (LEAKAGE_METADATA_MISSING)"
+  industry_relative_bp_cs: "FAIL (LEAKAGE_METADATA_MISSING)"
+  industry_relative_momentum_60_cs: "FAIL (mean_rank_ic=-0.006 raw, 12 failures)"
+  revenue_growth_ttm_cs: "FAIL (gate re-run: coverage 0%, no valid IC calibration)"
+  profit_growth_ttm_cs: "FAIL (gate re-run: coverage 0%, raw icir=0.069 < 0.200)"
+  growth_stability_8q_cs: "FAIL (gate re-run: 5 stocks, coverage 0.3%, no valid IC)"
+  earnings_acceleration_cs: "FAIL (gate re-run: 1 stock, coverage 0.3%, no valid IC)"
+
+# ===========================================================================
+# Factors pending gate re-evaluation (after next cache rebuild with relaxed PIT)
+# ===========================================================================
+pending_gate_factors:
+  - revenue_growth_ttm_cs
+  - profit_growth_ttm_cs
+  - growth_stability_8q_cs
+  - earnings_acceleration_cs
+
+# ===========================================================================
+# Composite & cross-section config (unchanged from r1)
+# ===========================================================================
+composite:
+  ic_window_months: 12
+  shrinkage: 0.3
+  weight_cap: 0.30
+  min_ic_obs: 20
+  min_icir: 0.0
+  hard_cap: false
+  horizon: 5
+  min_active_factors: 1
+  coverage_gate_enabled: false
+  sign_stability_check: true
+  min_date_coverage: 0.70
+  min_stocks_per_date: 30
+  min_merge_rate: 0.30
+
+cross_section:
+  winsor_method: "mad"
+  mad_multiplier: 5.0
+  min_coverage: 0.5
+  neutralize: true
+  neutralizers: ["industry", "log_market_cap"]
+  standardize: "zscore"
+  min_stocks_for_cs: 30

@@ -1,0 +1,308 @@
+# code_v4 Factor Configuration
+# ==============================
+# Factor definitions for CSI 300 cross-sectional multi-factor strategy.
+#
+# IMPORTANT: ``enabled_factors`` only controls the ``factor_dynamic`` strategy mode.
+# The ``regime`` strategy mode uses its own factor pool defined in
+# ``configs/regime.yaml → strategy_sleeves.*.factors`` and does NOT
+# read this whitelist.
+# Each factor specifies: data source, calculation window, processing steps.
+
+factors:
+  # -----------------------------------------------------------------------
+  # Technical / price-based factors
+  # -----------------------------------------------------------------------
+
+  # Short-term reversal (A-share strongest alpha)
+  reversal_5:
+    type: technical
+    category: reversal
+    description: "5-day short-term reversal"
+    formula: "-(adj_close / adj_close.shift(5) - 1)"
+    data_fields: [adj_close]
+    window: 5
+    skip_recent: 0
+    sign: 1  # positive = long high reversal
+
+  reversal_20:
+    type: technical
+    category: reversal
+    description: "20-day short-term reversal"
+    formula: "-(adj_close / adj_close.shift(20) - 1)"
+    data_fields: [adj_close]
+    window: 20
+    skip_recent: 0
+    sign: 1
+
+  # Momentum
+  momentum_60:
+    type: technical
+    category: momentum
+    description: "60-day momentum (skip recent 20d optional)"
+    formula: "adj_close / adj_close.shift(60) - adj_close / adj_close.shift(20)"
+    data_fields: [adj_close]
+    window: 60
+    skip_recent: 20
+    sign: 1
+
+  momentum_120:
+    type: technical
+    category: momentum
+    description: "120-day momentum (skip recent 20d)"
+    formula: "adj_close / adj_close.shift(120) - 1"
+    data_fields: [adj_close]
+    window: 120
+    skip_recent: 20
+    sign: 1
+
+  # Volatility
+  volatility_20:
+    type: technical
+    category: volatility
+    description: "20-day daily return volatility"
+    formula: "std(log_return, 20)"
+    data_fields: [adj_close]
+    window: 20
+    sign: -1  # low volatility premium
+
+  volatility_60:
+    type: technical
+    category: volatility
+    description: "60-day daily return volatility"
+    formula: "std(log_return, 60)"
+    data_fields: [adj_close]
+    window: 60
+    sign: -1
+
+  # IVOL (idiosyncratic volatility) - residual vol after regressing on market/industry
+  ivol_20:
+    type: technical
+    category: volatility
+    description: "20-day idiosyncratic volatility (residual of market+industry regression)"
+    formula: "std(residual from market+industry return regression, 20)"
+    data_fields: [adj_close, industry_code]
+    window: 20
+    sign: -1
+
+  # Turnover
+  turnover_5:
+    type: technical
+    category: liquidity
+    description: "5-day average turnover rate"
+    formula: "mean(turnover_rate, 5)"
+    data_fields: [turnover_rate]
+    window: 5
+    sign: -1  # low turnover premium in A-shares
+
+  abnormal_turnover_20:
+    type: technical
+    category: liquidity
+    description: "Abnormal turnover: turnover / avg_turnover_20 - 1"
+    formula: "turnover_rate / mean(turnover_rate, 20) - 1"
+    data_fields: [turnover_rate]
+    window: 20
+    sign: -1
+
+  # Price-volume divergence
+  pv_divergence_20:
+    type: technical
+    category: price_volume
+    description: "Price-volume divergence: corr(price_return, volume_change, 20) * -1"
+    formula: "corr(adj_close_return, vol_change, 20) * -1"
+    data_fields: [adj_close, vol]
+    window: 20
+    sign: 1
+
+  # RSI
+  rsi_14:
+    type: technical
+    category: oscillator
+    description: "14-day RSI"
+    formula: "RSI(adj_close, 14)"
+    data_fields: [adj_close]
+    window: 14
+    sign: -1  # overbought = lower expected return
+
+  # MACD
+  macd_12_26_9:
+    type: technical
+    category: oscillator
+    description: "MACD histogram (12,26,9)"
+    formula: "MACD_hist(adj_close, 12, 26, 9)"
+    data_fields: [adj_close]
+    window: 26
+    sign: 1
+
+  # -----------------------------------------------------------------------
+  # Fundamental factors
+  # -----------------------------------------------------------------------
+
+  ep:
+    type: fundamental
+    category: value
+    description: "Earnings-to-price ratio = 1/PE"
+    formula: "1 / pe"
+    data_fields: [pe]
+    sign: 1
+
+  bp:
+    type: fundamental
+    category: value
+    description: "Book-to-price ratio = 1/PB"
+    formula: "1 / pb"
+    data_fields: [pb]
+    sign: 1
+
+  sp:
+    type: fundamental
+    category: value
+    description: "Sales-to-price ratio = 1/PS"
+    formula: "1 / ps"
+    data_fields: [ps]
+    sign: 1
+
+  roe:
+    type: fundamental
+    category: quality
+    description: "Return on Equity (from daily_basic if available, else fina_indicator)"
+    formula: "roe"
+    data_fields: [roe]
+    sign: 1
+
+  gross_margin:
+    type: fundamental
+    category: quality
+    description: "Gross profit margin"
+    formula: "gross_profit / revenue"
+    data_fields: [gross_profit, revenue]
+    sign: 1
+
+  revenue_growth:
+    type: fundamental
+    category: growth
+    description: "Revenue YoY growth"
+    formula: "(revenue - revenue_4q_ago) / abs(revenue_4q_ago)"
+    data_fields: [revenue]
+    sign: 1
+
+  profit_growth:
+    type: fundamental
+    category: growth
+    description: "Net profit YoY growth"
+    formula: "(net_profit - net_profit_4q_ago) / abs(net_profit_4q_ago)"
+    data_fields: [net_profit]
+    sign: 1
+
+  leverage:
+    type: fundamental
+    category: risk
+    description: "Debt-to-equity ratio"
+    formula: "total_liability / total_equity"
+    data_fields: [total_liability, total_equity]
+    sign: -1
+
+  # Size (used for neutralization, optionally as factor)
+  size:
+    type: fundamental
+    category: size
+    description: "Log total market cap (used for neutralization)"
+    formula: "log(total_mv)"
+    data_fields: [total_mv]
+    sign: -1  # small-cap premium
+
+# ---------------------------------------------------------------------------
+# Cross-section processing parameters
+# ---------------------------------------------------------------------------
+cross_section:
+  # Outlier handling
+  winsor_method: "mad"           # "mad" or "quantile"
+  mad_multiplier: 5.0            # MAD multiplier for outlier detection
+  quantile_lower: 0.01           # if using quantile method
+  quantile_upper: 0.99
+
+  # Missing value handling
+  missing_method: "industry_median"  # "industry_median", "drop", or "cross_sectional_median"
+  min_coverage: 0.5              # minimum fraction of non-missing in cross-section
+
+  # Neutralization
+  neutralize: true
+  neutralizers: ["industry", "log_market_cap"]  # industry dummies + log(total_mv)
+  neutralize_method: "ols_residual"             # "ols_residual" or "orthogonalize"
+
+  # Standardization
+  standardize: "zscore"          # "zscore" or "rank"
+  min_stocks_for_cs: 30          # minimum stocks in cross-section for valid processing
+
+# ---------------------------------------------------------------------------
+# Factor evaluation parameters
+# ---------------------------------------------------------------------------
+evaluation:
+  horizons: [1, 5, 10, 20]      # forward return horizons (trading days)
+  quantile_groups: 5             # for quantile analysis
+  annual_periods:
+    - [2016, 2018]
+    - [2019, 2021]
+    - [2022, 2024]
+    - [2025, 2026]
+
+  # IC thresholds (for go/no-go)
+  min_mean_ic: 0.02
+  min_icir: 0.3
+  min_ic_positive_rate: 0.52
+
+# ---------------------------------------------------------------------------
+# Factor enable/disable (Phase 4)
+# ---------------------------------------------------------------------------
+# enabled_factors semantics:
+#   Explicit list = only these factors enter composite scoring (current behaviour).
+#   [] (empty)     = FULL CANDIDATE POOL — all cached _cs factors are candidates.
+#                    Coverage gate + ICIR gate filter at each signal_date.
+#                    Recommended for production after Step 2 validation.
+enabled_factors:
+  - reversal_5_cs
+  - reversal_20_cs
+  - pv_divergence_20_cs
+  - rsi_14_cs
+  - volatility_20_cs
+
+# Disabled factors with reasons (for documentation)
+disabled_factors:
+  momentum_60_cs: "ICIR < 0.1, sign unstable in recent regimes"
+  momentum_120_cs: "ICIR < 0.1, sign unstable in recent regimes"
+  volatility_60_cs: "Redundant with volatility_20_cs, weaker IC"
+  ivol_20_cs: "Requires industry regression, noisy in short window"
+  turnover_5_cs: "High turnover contribution, low IC"
+  abnormal_turnover_20_cs: "High turnover contribution, IC near zero"
+  macd_12_26_9_cs: "IC near zero in bull markets"
+  ep_cs: "Fundamental data gaps cause coverage issues"
+  bp_cs: "Fundamental data gaps cause coverage issues"
+  sp_cs: "Fundamental data gaps cause coverage issues"
+  roe_cs: "Fundamental data gaps cause coverage issues"
+  gross_margin_cs: "Fundamental data gaps cause coverage issues"
+  revenue_growth_cs: "Fundamental data gaps cause coverage issues"
+  profit_growth_cs: "Fundamental data gaps cause coverage issues"
+  leverage_cs: "Fundamental data gaps cause coverage issues"
+  size_cs: "Used for neutralization, not as alpha factor"
+
+# ---------------------------------------------------------------------------
+# Composite score (IC weighting)
+# ---------------------------------------------------------------------------
+# WIRED: These parameters are now passed to ICWeighting.__init__ via
+# configs/factor_config.py.  Defaults match the old hardcoded values
+# so that existing backtests are reproduced exactly.
+composite:
+  ic_window_months: 12           # rolling window for IC estimation
+  ic_method: "rank"              # "rank" (Spearman) — only option implemented
+  shrinkage: 0.3                 # shrinkage toward zero
+  weight_cap: 0.3                # per-factor raw weight cap (pre-normalization)
+  min_ic_obs: 20                 # minimum IC observations for valid weight
+  min_icir: 0.0                  # 0.0 = disabled; set to 0.05 to exclude noise
+  hard_cap: false                # true = post-normalization hard cap
+  horizon: 5                     # forward return horizon (trading days)
+  min_active_factors: 1          # minimum factors required to emit a signal
+  coverage_gate_enabled: false   # true = enable per-date historical coverage gate
+  sign_stability_check: true     # require stable sign over window
+  # Coverage gate parameters (used only when coverage_gate_enabled=true)
+  min_date_coverage: 0.70
+  min_stocks_per_date: 30
+  min_merge_rate: 0.30

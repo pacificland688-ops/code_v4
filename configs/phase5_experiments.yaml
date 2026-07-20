@@ -1,0 +1,111 @@
+# Phase 5 Experiment Configuration
+# ================================
+# Parameter grid search for strategy optimization.
+# Each experiment defines parameter grids to test.
+# Candidates must simultaneously pass:
+#   avg_turnover <= 0.32
+#   optimizer_fallback_rate <= 0.15
+#   cost_2x_excess >= -0.015
+#   information_ratio >= 0.25
+
+base:
+  start_date: "20160101"
+  end_date: "20260604"
+  oos_start_date: "20250101"
+  oos_end_date: "20260604"
+  weighting: "optimized"
+  top_n: 100
+  weight_max: 0.02
+  rebalance_freq: "weekly"
+  turnover_max: 0.30
+  turnover_penalty: 0.005
+
+experiments:
+  # -------------------------------------------------------------------
+  # E1: Turnover penalty grid
+  # Higher penalty → lower turnover, but risk of overly passive portfolio.
+  # -------------------------------------------------------------------
+  E1_turnover_penalty_grid:
+    turnover_penalty: [0.0025, 0.005, 0.01, 0.02]
+
+  # -------------------------------------------------------------------
+  # E2: Turnover cap grid
+  # Lower cap → more constrained rebalancing, potentially lower IR.
+  # Higher cap → more flexibility but higher costs.
+  # -------------------------------------------------------------------
+  E2_turnover_cap_grid:
+    turnover_max: [0.20, 0.25, 0.30, 0.35]
+
+  # -------------------------------------------------------------------
+  # E3: Buffer selection grid
+  # Wider entry/exit gap → lower turnover, more stable holdings.
+  # Narrow gap → more responsive to signal changes.
+  # -------------------------------------------------------------------
+  E3_buffer_selection_grid:
+    entry_exit:
+      - [100, 130]
+      - [100, 150]
+      - [120, 180]
+
+  # -------------------------------------------------------------------
+  # E4: Signal smoothing grid
+  # Smoothing reduces noise-driven turnover.
+  # Higher halflife → more smoothing → lower turnover.
+  # -------------------------------------------------------------------
+  E4_signal_smoothing_grid:
+    score_smoothing_halflife: [2, 4, 8]
+
+  # -------------------------------------------------------------------
+  # E5: Optimizer stability grid
+  # Stronger shrinkage → more stable covariance → fewer solver failures.
+  # Constraint relaxation helps when feasible region is too tight.
+  # -------------------------------------------------------------------
+  E5_optimizer_stability_grid:
+    cov_shrinkage:
+      - "ledoit_wolf"
+      - "diagonal_shrink_20"
+      - "diagonal_shrink_40"
+    constraint_relaxation:
+      - "none"
+      - "tiered"
+
+  # -------------------------------------------------------------------
+  # E6: Cost-aware objective
+  # Adds explicit cost penalty to optimizer objective.
+  # Higher lambda → more cost-conscious weighting.
+  # -------------------------------------------------------------------
+  E6_cost_aware_objective:
+    cost_aware_lambda: [0.5, 1.0, 2.0]
+
+# -----------------------------------------------------------------------
+# Candidate filter thresholds
+# -----------------------------------------------------------------------
+filters:
+  avg_turnover:
+    max: 0.32
+    description: "Average one-way turnover must be <= 32%"
+
+  optimizer_fallback_rate:
+    max: 0.15
+    description: "Optimizer fallback rate must be <= 15%"
+
+  cost_2x_excess:
+    min: -0.015
+    description: "2x cost excess return must be >= -1.5%"
+
+  information_ratio:
+    min: 0.25
+    description: "Information ratio must be >= 0.25"
+
+# -----------------------------------------------------------------------
+# Execution rules
+# -----------------------------------------------------------------------
+execution:
+  # Phase 3 interval first (IS validation)
+  phase3_interval_first: true
+
+  # Max candidates per experiment line to advance to Phase 5
+  max_candidates_per_line: 3
+
+  # DO NOT use OOS data for parameter selection
+  oos_for_selection: false

@@ -1,0 +1,192 @@
+# ===========================================================================
+# Regime Router Configuration
+# ===========================================================================
+# 市场状态识别 + 多子策略软分配
+#
+# 核心原则:
+#   - 软分配，非硬切换
+#   - 所有 regime 特征只用当时可见数据 (PIT-safe)
+#   - 不追求单年收益最大，而是降低风格失配年份的损失
+# ===========================================================================
+
+enabled: true
+
+# ---------------------------------------------------------------------------
+# Regime Detector — 市场状态识别
+# ---------------------------------------------------------------------------
+regime_detector:
+  # 基准指数代码 (CSI 300)
+  index_code: "000300.SH"
+
+  # 趋势强度特征
+  trend:
+    ma_short: 60          # 短期均线窗口 (交易日)
+    ma_long: 120           # 长期均线窗口 (交易日)
+    return_windows: [20, 60, 120]  # 指数收益计算窗口
+
+  # 波动/风险状态特征
+  volatility:
+    vol_windows: [20, 60]        # 已实现波动率窗口
+    drawdown_window: 60           # 最大回撤窗口
+
+  # 市场宽度特征
+  breadth:
+    ma_window: 60                 # 均线窗口 (用于计算站上均线的股票占比)
+    min_stocks: 100               # 最小股票数 (用于宽度计算)
+
+  # 特征平滑
+  smoothing:
+    halflife: 4                   # EWM 半衰期 (周数)
+
+# ---------------------------------------------------------------------------
+# Strategy Sleeves — 子策略定义
+# ---------------------------------------------------------------------------
+strategy_sleeves:
+  # 反转策略 — 适合震荡/均值回归市场
+  reversal:
+    factors:
+      - reversal_5_cs
+      - reversal_20_cs
+      - rsi_14_cs
+      - pv_divergence_20_cs
+
+  # 动量策略 — 适合趋势上涨/趋势延续市场
+  momentum:
+    factors:
+      - momentum_60_cs
+      - momentum_120_cs
+      - macd_12_26_9_cs
+      - pv_divergence_20_cs
+
+  # 防御策略 — 适合下跌/高波动/风险收缩市场
+  defensive:
+    factors:
+      - volatility_20_cs
+      - volatility_60_cs
+      - reversal_20_cs
+
+  # 价值策略 — 适合价值风格占优市场
+  value:
+    factors:
+      - ep_cs
+      - bp_cs
+      - sp_cs
+
+  # 量价策略 — 适合量价结构明显/成交驱动市场
+  volume_price:
+    factors:
+      - pv_divergence_20_cs
+      - macd_12_26_9_cs
+      - momentum_60_cs
+      - volatility_20_cs
+
+# ---------------------------------------------------------------------------
+# Sleeve Composite — 子策略内部 IC 加权参数
+# ---------------------------------------------------------------------------
+sleeve_composite:
+  ic_window_months: 6
+  shrinkage: 0.5
+  weight_cap: 0.50
+  min_ic_obs: 20
+  min_icir: 0.05
+  hard_cap: false
+  min_active_factors: 2
+  coverage_gate_enabled: true
+  sign_stability_check: true
+  horizon: 5
+
+# ---------------------------------------------------------------------------
+# Sleeve Performance Overlay — 根据近期 sleeve 实际 IC 调节基础权重
+# ---------------------------------------------------------------------------
+sleeve_performance_overlay:
+  # 默认关闭，参数网格/回测候选显式打开，保证 baseline 行为不变
+  enabled: false
+
+  # 只使用 forward return 已经成熟的历史 sleeve IC
+  lookback_months: 6
+  horizon: 5
+  min_obs: 12
+  min_stocks: 30
+
+  # 质量评分 = ICIR + 正 IC 命中率，最后映射为 sleeve 乘数
+  icir_weight: 0.70
+  hit_rate_weight: 0.30
+  icir_scale: 0.50
+  strength: 0.50
+  neutral_multiplier: 1.00
+  multiplier_min: 0.60
+  multiplier_max: 1.60
+
+# ---------------------------------------------------------------------------
+# Allocator — Regime 到 Sleeve 权重映射
+# ---------------------------------------------------------------------------
+allocator:
+  # 最少可用 sleeve 数 (低于此数不产生信号)
+  min_sleeves: 2
+
+  # 单 sleeve 权重约束
+  sleeve_weight_cap: 0.50
+  sleeve_weight_floor: 0.05
+
+  # 权重变化速度限制 (每周最大变化)
+  max_weekly_weight_change: 0.15
+
+  # Regime → Sleeve 基础映射矩阵
+  # 每个 regime 下各 sleeve 的权重 (按行求和 = 1.0)
+  regime_to_sleeve_weights:
+    # 趋势上涨: 动量主导 + 量价辅助
+    trend_up:
+      momentum: 0.45
+      volume_price: 0.25
+      reversal: 0.10
+      defensive: 0.10
+      value: 0.10
+
+    # 趋势下跌: 防御主导 + 价值/反转辅助
+    trend_down:
+      defensive: 0.45
+      value: 0.20
+      reversal: 0.20
+      momentum: 0.05
+      volume_price: 0.10
+
+    # 震荡: 反转主导 + 量价辅助
+    range_bound:
+      reversal: 0.45
+      volume_price: 0.25
+      defensive: 0.15
+      value: 0.10
+      momentum: 0.05
+
+    # 高波动: 防御主导 + 反转辅助
+    high_volatility:
+      defensive: 0.50
+      reversal: 0.20
+      value: 0.15
+      volume_price: 0.10
+      momentum: 0.05
+
+    # 价值轮动: 价值主导 + 防御辅助
+    value_rotation:
+      value: 0.45
+      defensive: 0.20
+      reversal: 0.15
+      momentum: 0.10
+      volume_price: 0.10
+
+# ---------------------------------------------------------------------------
+# Factor Alignment — PIT as-of 对齐
+# ---------------------------------------------------------------------------
+factor_alignment:
+  # 技术/量价因子最大滞后交易日数
+  technical_max_stale_trading_days: 5
+
+  # 基本面因子最大滞后交易日数 (≈ 1 个季度)
+  fundamental_max_stale_trading_days: 63
+
+  # 基本面因子列表 (月频/季频因子)
+  fundamental_factors:
+    - ep_cs
+    - bp_cs
+    - sp_cs
+    - log_market_cap_cs

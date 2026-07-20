@@ -1,0 +1,210 @@
+# ===========================================================================
+# Factors Candidate v1 — Minimal Cleanup
+# ===========================================================================
+# 基于 factor_signal_alignment.md 的审计结论。
+# 修改内容:
+#   - 启用 ep_cs, bp_cs, sp_cs (value 因子通过所有门槛)
+#   - 保留 pv_divergence_20_cs (唯一通过门槛的技术因子)
+#   - 移除 reversal_20_cs, rsi_14_cs (IC 未通过)
+#   - 保留 reversal_5_cs (边际可用，在震荡市中有一定效果)
+# 经济假设:
+#   - Value 因子是当前最稳定的 alpha 来源
+#   - 去除噪音因子能提升 composite score 质量
+#   - Reversal 仅在震荡市中可用，不应在趋势市中占主导
+# 预期改善: 2017, 2019, 2021 (减少无效因子噪音)
+# 可能伤害: 2022 (reversal 在偏熊市中提供了分散化)
+# PIT 假设: 不变
+# ===========================================================================
+
+factors:
+  # ---------------------------------------------------------------------------
+  # Technical / price-based factors
+  # ---------------------------------------------------------------------------
+  reversal_5:
+    type: technical
+    category: reversal
+    description: "5-day short-term reversal"
+    formula: "-(adj_close / adj_close.shift(5) - 1)"
+    data_fields: [adj_close]
+    window: 5
+    skip_recent: 0
+    sign: 1
+
+  reversal_20:
+    type: technical
+    category: reversal
+    description: "20-day short-term reversal"
+    formula: "-(adj_close / adj_close.shift(20) - 1)"
+    data_fields: [adj_close]
+    window: 20
+    skip_recent: 0
+    sign: 1
+
+  momentum_60:
+    type: technical
+    category: momentum
+    description: "60-day momentum (skip recent 20d)"
+    formula: "adj_close / adj_close.shift(60) - adj_close / adj_close.shift(20)"
+    data_fields: [adj_close]
+    window: 60
+    skip_recent: 20
+    sign: 1
+
+  momentum_120:
+    type: technical
+    category: momentum
+    description: "120-day momentum (skip recent 20d)"
+    formula: "adj_close / adj_close.shift(120) - 1"
+    data_fields: [adj_close]
+    window: 120
+    skip_recent: 20
+    sign: 1
+
+  volatility_20:
+    type: technical
+    category: volatility
+    description: "20-day daily return volatility"
+    formula: "std(log_return, 20)"
+    data_fields: [adj_close]
+    window: 20
+    sign: -1
+
+  volatility_60:
+    type: technical
+    category: volatility
+    description: "60-day daily return volatility"
+    formula: "std(log_return, 60)"
+    data_fields: [adj_close]
+    window: 60
+    sign: -1
+
+  pv_divergence_20:
+    type: technical
+    category: price_volume
+    description: "Price-volume divergence"
+    formula: "corr(adj_close_return, vol_change, 20) * -1"
+    data_fields: [adj_close, vol]
+    window: 20
+    sign: 1
+
+  rsi_14:
+    type: technical
+    category: oscillator
+    description: "14-day RSI"
+    formula: "RSI(adj_close, 14)"
+    data_fields: [adj_close]
+    window: 14
+    sign: -1
+
+  macd_12_26_9:
+    type: technical
+    category: oscillator
+    description: "MACD histogram (12,26,9)"
+    formula: "MACD_hist(adj_close, 12, 26, 9)"
+    data_fields: [adj_close]
+    window: 26
+    sign: 1
+
+  # ---------------------------------------------------------------------------
+  # Fundamental factors
+  # ---------------------------------------------------------------------------
+  ep:
+    type: fundamental
+    category: value
+    description: "Earnings-to-price ratio = 1/PE"
+    formula: "1 / pe"
+    data_fields: [pe]
+    sign: 1
+
+  bp:
+    type: fundamental
+    category: value
+    description: "Book-to-price ratio = 1/PB"
+    formula: "1 / pb"
+    data_fields: [pb]
+    sign: 1
+
+  sp:
+    type: fundamental
+    category: value
+    description: "Sales-to-price ratio = 1/PS"
+    formula: "1 / ps"
+    data_fields: [ps]
+    sign: 1
+
+  size:
+    type: fundamental
+    category: size
+    description: "Log total market cap (used for neutralization)"
+    formula: "log(total_mv)"
+    data_fields: [total_mv]
+    sign: -1
+
+cross_section:
+  winsor_method: "mad"
+  mad_multiplier: 5.0
+  quantile_lower: 0.01
+  quantile_upper: 0.99
+  missing_method: "industry_median"
+  min_coverage: 0.5
+  neutralize: true
+  neutralizers: ["industry", "log_market_cap"]
+  neutralize_method: "ols_residual"
+  standardize: "zscore"
+  min_stocks_for_cs: 30
+
+evaluation:
+  horizons: [1, 5, 10, 20]
+  quantile_groups: 5
+  annual_periods:
+    - [2016, 2018]
+    - [2019, 2021]
+    - [2022, 2024]
+    - [2025, 2026]
+  min_mean_ic: 0.02
+  min_icir: 0.3
+  min_ic_positive_rate: 0.52
+
+# ===========================================================================
+# CHANGED: enabled_factors — 启用 value 因子，移除低 IC 技术因子
+# ===========================================================================
+# v1 相比原版的变更:
+#   + ep_cs, bp_cs, sp_cs      ← 从 disabled 移到 enabled（通过所有门槛）
+#   - reversal_20_cs            ← ICIR < 0.20，与 reversal_5_cs 冗余
+#   - rsi_14_cs                 ← ICIR < 0.15，近乎随机
+#   - volatility_20_cs          ← ICIR < 0.10，移为风险约束
+enabled_factors:
+  - ep_cs
+  - bp_cs
+  - sp_cs
+  - reversal_5_cs
+  - pv_divergence_20_cs
+
+disabled_factors:
+  reversal_20_cs: "ICIR < 0.20; redundant with reversal_5_cs"
+  rsi_14_cs: "ICIR < 0.15; near random in most years"
+  volatility_20_cs: "ICIR < 0.10; migrate to risk constraint, not alpha"
+  volatility_60_cs: "ICIR < 0.08; migrate to risk constraint"
+  momentum_60_cs: "ICIR < 0.20; needs redesign (3-12-1 structure)"
+  momentum_120_cs: "ICIR < 0.22; needs redesign (3-12-1 structure)"
+  macd_12_26_9_cs: "ICIR < 0.06; near zero in trend markets"
+  ivol_20_cs: "Requires industry regression, noisy in short window"
+  turnover_5_cs: "High turnover contribution, low IC"
+  abnormal_turnover_20_cs: "High turnover contribution, IC near zero"
+  size_cs: "Used for neutralization, not as alpha factor"
+
+composite:
+  ic_window_months: 12
+  ic_method: "rank"
+  shrinkage: 0.3
+  weight_cap: 0.3
+  min_ic_obs: 20
+  min_icir: 0.0
+  hard_cap: false
+  horizon: 5
+  min_active_factors: 1
+  coverage_gate_enabled: false
+  sign_stability_check: true
+  min_date_coverage: 0.70
+  min_stocks_per_date: 30
+  min_merge_rate: 0.30

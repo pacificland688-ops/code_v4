@@ -1,0 +1,149 @@
+# ===========================================================================
+# Regime Candidate v3 — Sleeve Cleanup + Trend Allocator + Performance Overlay
+# ===========================================================================
+# 基于 regime_candidate_v2.yaml，额外启用 sleeve_performance_overlay。
+# 修改内容:
+#   - 启用 sleeve_performance_overlay (strength=0.40, 比网格最佳更保守)
+#   - 基于近期 sleeve IC 质量调权，实现"优者多得、劣者少得"
+#   - 收紧 fundamental_max_stale_trading_days: 63→45
+# 经济假设:
+#   - Performance overlay 提供数据驱动的第二层调节
+#   - 结合 regime router 的判断和 sleeve 近期实际表现
+#   - 保守 strength=0.40 防止过拟合（网格最佳为 0.50）
+#   - 收紧 fundamental staleness 降低过时财务数据风险
+# 预期改善: 2021 (style switch 年，overlay 可以帮助更快调整)
+# 可能伤害: 2018 (如果 overlay 在熊市中追逐近期"表现好"的 strategy)
+# PIT 假设: 不变（overlay 仅使用已成熟的 forward return）
+# ===========================================================================
+
+enabled: true
+
+regime_detector:
+  index_code: "000300.SH"
+  trend:
+    ma_short: 60
+    ma_long: 120
+    return_windows: [20, 60, 120]
+  volatility:
+    vol_windows: [20, 60]
+    drawdown_window: 60
+  breadth:
+    ma_window: 60
+    min_stocks: 100
+  smoothing:
+    halflife: 4
+
+strategy_sleeves:
+  # v3: Cleaned — only uses factors from enabled_factors in factors_candidate_v1.yaml
+  reversal:
+    factors:
+      - reversal_5_cs
+      - pv_divergence_20_cs
+
+  momentum:
+    factors:
+      - pv_divergence_20_cs
+
+  defensive:
+    factors:
+      - ep_cs
+      - bp_cs
+
+  value:
+    factors:
+      - ep_cs
+      - bp_cs
+      - sp_cs
+
+  volume_price:
+    factors:
+      - pv_divergence_20_cs
+
+sleeve_composite:
+  ic_window_months: 6
+  shrinkage: 0.5
+  weight_cap: 0.50
+  min_ic_obs: 20
+  min_icir: 0.05
+  hard_cap: false
+  min_active_factors: 1
+  coverage_gate_enabled: true
+  sign_stability_check: true
+  horizon: 5
+
+# ===========================================================================
+# v3 CHANGED: 启用 sleeve_performance_overlay
+# ===========================================================================
+sleeve_performance_overlay:
+  enabled: true               # v3: 启用
+
+  lookback_months: 6
+  horizon: 5
+  min_obs: 12
+  min_stocks: 30
+
+  # 质量评分参数
+  icir_weight: 0.70
+  hit_rate_weight: 0.30
+  icir_scale: 0.50
+
+  # 乘数参数（比网格最佳 0.50 更保守）
+  strength: 0.40              # v3: 保守强度
+  neutral_multiplier: 1.00
+  multiplier_min: 0.60
+  multiplier_max: 1.60
+
+allocator:
+  min_sleeves: 2
+  sleeve_weight_cap: 0.50
+  sleeve_weight_floor: 0.05
+  max_weekly_weight_change: 0.15
+
+  # v3: 与 v2 相同的基础映射（trend-sensitive）
+  regime_to_sleeve_weights:
+    trend_up:
+      momentum: 0.40
+      volume_price: 0.30
+      value: 0.15
+      defensive: 0.10
+      reversal: 0.05
+
+    trend_down:
+      defensive: 0.50
+      value: 0.25
+      reversal: 0.10
+      volume_price: 0.10
+      momentum: 0.05
+
+    range_bound:
+      reversal: 0.30
+      volume_price: 0.25
+      value: 0.20
+      defensive: 0.15
+      momentum: 0.10
+
+    high_volatility:
+      defensive: 0.55
+      value: 0.20
+      reversal: 0.10
+      volume_price: 0.10
+      momentum: 0.05
+
+    value_rotation:
+      value: 0.50
+      defensive: 0.20
+      reversal: 0.15
+      momentum: 0.10
+      volume_price: 0.05
+
+# ===========================================================================
+# v3 CHANGED: 收紧基本面因子过期容忍度
+# ===========================================================================
+factor_alignment:
+  technical_max_stale_trading_days: 5
+  fundamental_max_stale_trading_days: 45    # v3: 63→45 (约2个月)
+  fundamental_factors:
+    - ep_cs
+    - bp_cs
+    - sp_cs
+    - log_market_cap_cs

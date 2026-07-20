@@ -1,0 +1,199 @@
+# ===========================================================================
+# V4 Factor Build Configuration
+# ===========================================================================
+# Controls factor computation, PIT alignment, caching, and manifest generation.
+
+# Factor universe definition
+universe_config: "configs/factors_alpha_v4_universe.yaml"
+
+# Date ranges
+build:
+  validation_start: "20170101"
+  validation_end: "20241231"
+  ytd_start: "20260101"
+  ytd_end: "20260605"
+
+# Cache settings
+cache:
+  base_path: "data/parquet/factors"
+  format: "parquet"
+  compression: "zstd"
+  partition: "factor_name={factor_name}/year={year}"
+
+# PIT alignment
+pit:
+  use_ann_date: true
+  conservative_fallback: true
+  max_lag_days:
+    technical: 7
+    fundamental: 63
+    financial_statement: 120
+  conservative_lag:
+    annual_report_days: 120
+    semi_annual_report_days: 60
+    quarterly_report_days: 30
+
+# Cross-sectional processing (applied after factor computation)
+cross_section:
+  enabled: true
+  winsor_method: "mad"
+  mad_multiplier: 5.0
+  quantile_lower: 0.01
+  quantile_upper: 0.99
+  missing_method: "industry_median"
+  min_coverage: 0.5
+  neutralize: true
+  neutralizers: ["industry", "log_market_cap"]
+  neutralize_method: "ols_residual"
+  standardize: "zscore"
+  min_stocks_for_cs: 30
+
+# Factor build categories and their execution order
+# Price-based factors first (fast), then fundamental (slow, need PIT)
+build_order:
+  - reversal_repair       # P1 - cleaned reversal candidates
+  - risk_adj_momentum     # P2 - price-based, fast
+  - risk_premium          # P1 - benchmark-aware defensive candidates
+  - industry_relative     # P1 - price + industry
+  - value_repair          # P1 - daily_basic + industry
+  - quality               # P0 - fina_indicator
+  - growth                # P0 - income
+  - cashflow              # P0 - fina_indicator + daily_basic
+
+# Factor-specific build parameters
+factor_params:
+  # Reversal repair
+  reversal_5_liquidity_adj_cs:
+    reversal_days: 5
+    liquidity_window: 20
+    vol_window: 20
+  reversal_20_vol_adj_cs:
+    reversal_days: 20
+    vol_window: 60
+  reversal_5_liquidity_adj_weekly_cs:
+    reversal_days: 5
+    liquidity_window: 20
+    vol_window: 20
+    smooth_window: 3
+    frequency: weekly
+  reversal_20_vol_adj_weekly_cs:
+    reversal_days: 20
+    vol_window: 60
+    smooth_window: 5
+    frequency: weekly
+
+  # Risk premium / defensive
+  low_beta_60_cs:
+    beta_window: 60
+  drawdown_resilience_cs:
+    drawdown_window: 60
+    recovery_window: 20
+  low_beta_120_monthly_cs:
+    beta_window: 120
+    smooth_window: 20
+    frequency: monthly
+  drawdown_resilience_monthly_cs:
+    drawdown_window: 120
+    recovery_window: 20
+    smooth_window: 10
+    frequency: monthly
+
+  # Quality
+  roe_stability_8q_cs:
+    window_quarters: 8
+    min_quarters: 4
+  roa_ttm_cs:
+    ttm_quarters: 4
+  gross_margin_ttm_cs:
+    ttm_quarters: 4
+  net_margin_ttm_cs:
+    ttm_quarters: 4
+  profitability_quality_cs:
+    ttm_quarters: 4
+  asset_turnover_ttm_cs:
+    ttm_quarters: 4
+
+  # Cashflow
+  ocf_to_mktcap_cs:
+    ttm_quarters: 4
+  ocf_to_profit_cs:
+    ttm_quarters: 4
+  fcf_yield_cs:
+    ttm_quarters: 4
+  cashflow_stability_8q_cs:
+    window_quarters: 8
+    min_quarters: 4
+  accrual_quality_cs:
+    ttm_quarters: 4
+  receivable_pressure_cs:
+    ttm_quarters: 4
+
+  # Growth
+  revenue_growth_ttm_cs:
+    ttm_quarters: 4
+    min_quarters: 4
+  profit_growth_ttm_cs:
+    ttm_quarters: 4
+    min_quarters: 4
+  growth_stability_8q_cs:
+    window_quarters: 8
+    min_quarters: 5
+  growth_value_match_cs:
+    ttm_quarters: 4
+  earnings_acceleration_cs:
+    ttm_quarters: 4
+    min_quarters: 6  # need extra quarters for acceleration
+
+  # Value repair
+  industry_relative_ep_cs:
+    industry_source: "shenwan_l1"
+  industry_relative_bp_cs:
+    industry_source: "shenwan_l1"
+  valuation_reversion_3y_cs:
+    lookback_years: 3
+  quality_value_composite_cs:
+    ttm_quarters: 4
+  dividend_quality_cs:
+    ttm_quarters: 4
+
+  # Industry relative
+  industry_relative_momentum_60_cs:
+    momentum_days: 60
+    skip_days: 5
+    industry_source: "shenwan_l1"
+  industry_relative_quality_cs:
+    industry_source: "shenwan_l1"
+  industry_relative_growth_cs:
+    industry_source: "shenwan_l1"
+  industry_relative_value_cs:
+    industry_source: "shenwan_l1"
+
+  # Risk-adjusted momentum
+  momentum_60_skip5_cs:
+    momentum_days: 60
+    skip_days: 5
+  momentum_120_skip20_cs:
+    momentum_days: 120
+    skip_days: 20
+  risk_adjusted_momentum_60_cs:
+    momentum_days: 60
+    vol_window: 60
+  volume_confirmed_momentum_cs:
+    momentum_days: 60
+    vol_window: 20
+  trend_quality_cs:
+    short_window: 20
+    long_window: 60
+
+# Manifest tracking
+manifest:
+  enabled: true
+  record_fields:
+    - factor_name
+    - build_timestamp
+    - config_sha256
+    - input_data_versions
+    - n_rows
+    - n_stocks
+    - date_range
+    - pit_audit_status

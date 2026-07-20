@@ -1,0 +1,343 @@
+# ===========================================================================
+# Factors Candidate V4 — Alpha Rebuild Candidate Pool
+# ===========================================================================
+# 基于 V4 alpha 因子质量重建 gate 结果。
+# 包含通过统一质量 gate 的因子 + 经人工审核保留的 WATCH 因子。
+#
+# 生成日期：2026-06-14
+# 质量审核脚本：scripts/factor_quality_rebuild.py --config configs/factor_quality_rebuild_v4.yaml
+# 审核报告：docs/factor_quality_rebuild_v4_report.md
+# ===========================================================================
+
+factors:
+  # ===========================================================================
+  # Core value factors (V2/V3 legacy, re-validated)
+  # ===========================================================================
+  ep:
+    type: fundamental
+    category: value
+    description: "Earnings-to-price ratio = 1/PE"
+    formula: "1 / pe"
+    data_fields: [pe]
+    sign: 1
+    gate_status: PASS
+    source: legacy_v2_v3
+
+  bp:
+    type: fundamental
+    category: value
+    description: "Book-to-price ratio = 1/PB"
+    formula: "1 / pb"
+    data_fields: [pb]
+    sign: 1
+    gate_status: PASS
+    source: legacy_v2_v3
+
+  sp:
+    type: fundamental
+    category: value
+    description: "Sales-to-price ratio = 1/PS"
+    formula: "1 / ps"
+    data_fields: [ps]
+    sign: 1
+    gate_status: PASS
+    source: legacy_v2_v3
+
+  # ===========================================================================
+  # Technical factors (legacy, re-validated)
+  # ===========================================================================
+  reversal_5:
+    type: technical
+    category: reversal
+    description: "5-day short-term reversal"
+    formula: "-(adj_close / adj_close.shift(5) - 1)"
+    data_fields: [adj_close]
+    window: 5
+    skip_recent: 0
+    sign: 1
+    gate_status: WATCH
+    watch_reason: "Marginal ICIR in validation; retained for range-bound regime diversification"
+    source: legacy_v2_v3
+
+  pv_divergence_20:
+    type: technical
+    category: price_volume
+    description: "Price-volume divergence"
+    formula: "corr(adj_close_return, vol_change, 20) * -1"
+    data_fields: [adj_close, vol]
+    window: 20
+    sign: 1
+    gate_status: PASS
+    source: legacy_v2_v3
+
+  # ===========================================================================
+  # V4 Quality factors (P0)
+  # ===========================================================================
+  roe_stability_8q:
+    type: fundamental
+    category: quality
+    priority: P0
+    description: "ROE 8-quarter stability (negative std)"
+    formula: "-std(ROE_{q}, ROE_{q-1}, ..., ROE_{q-7})"
+    data_fields: [roe]
+    window_quarters: 8
+    sign: 1
+    gate_status: PENDING_GATE
+    pit_required: true
+
+  gross_margin_ttm:
+    type: fundamental
+    category: quality
+    priority: P0
+    description: "Gross margin TTM"
+    formula: "sum(gross_profit, 4q) / sum(revenue, 4q)"
+    data_fields: [grossprofit_margin]
+    sign: 1
+    gate_status: PENDING_GATE
+    pit_required: true
+
+  profitability_quality:
+    type: fundamental
+    category: quality
+    priority: P0
+    description: "Composite profitability quality (margins + ROE rank)"
+    formula: "rank(gross_margin_ttm) + rank(net_margin_ttm) + rank(roe_ttm)"
+    data_fields: [grossprofit_margin, netprofit_margin, roe]
+    sign: 1
+    gate_status: PENDING_GATE
+    pit_required: true
+
+  # ===========================================================================
+  # V4 Cashflow factors (P0)
+  # ===========================================================================
+  ocf_to_mktcap:
+    type: fundamental
+    category: cashflow
+    priority: P0
+    description: "Operating cash flow / market cap"
+    formula: "sum(ocf, 4q) / total_mv"
+    data_fields: [ocf, total_mv]
+    sign: 1
+    gate_status: PENDING_GATE
+    pit_required: true
+
+  ocf_to_profit:
+    type: fundamental
+    category: cashflow
+    priority: P0
+    description: "Operating cash flow / net profit"
+    formula: "sum(ocf, 4q) / sum(profit_dedt, 4q)"
+    data_fields: [ocf, profit_dedt]
+    sign: 1
+    gate_status: PENDING_GATE
+    pit_required: true
+
+  fcf_yield:
+    type: fundamental
+    category: cashflow
+    priority: P0
+    description: "Free cash flow yield"
+    formula: "sum(fcf, 4q) / total_mv"
+    data_fields: [fcf, total_mv]
+    sign: 1
+    gate_status: PENDING_GATE
+    pit_required: true
+
+  # ===========================================================================
+  # V4 Growth factors (P0)
+  # ===========================================================================
+  revenue_growth_ttm:
+    type: fundamental
+    category: growth
+    priority: P0
+    description: "Revenue TTM YoY growth"
+    formula: "(sum(revenue, recent_4q) / sum(revenue, prior_4q)) - 1"
+    data_fields: [revenue]
+    sign: 1
+    gate_status: PENDING_GATE
+    pit_required: true
+
+  profit_growth_ttm:
+    type: fundamental
+    category: growth
+    priority: P0
+    description: "Net profit TTM YoY growth"
+    formula: "(sum(n_income, recent_4q) / sum(n_income, prior_4q)) - 1"
+    data_fields: [n_income]
+    sign: 1
+    gate_status: PENDING_GATE
+    pit_required: true
+
+  earnings_acceleration:
+    type: fundamental
+    category: growth
+    priority: P0
+    description: "Earnings acceleration (2nd derivative of profit)"
+    formula: "profit_growth_ttm(t) - profit_growth_ttm(t-2q)"
+    data_fields: [n_income]
+    sign: 1
+    gate_status: PENDING_GATE
+    pit_required: true
+
+  # ===========================================================================
+  # V4 Industry Relative Value factors (P1)
+  # ===========================================================================
+  industry_relative_ep:
+    type: fundamental
+    category: value_repair
+    priority: P1
+    description: "EP rank within industry"
+    formula: "rank_within_industry(1/pe)"
+    data_fields: [pe]
+    sign: 1
+    gate_status: PENDING_GATE
+
+  industry_relative_bp:
+    type: fundamental
+    category: value_repair
+    priority: P1
+    description: "BP rank within industry"
+    formula: "rank_within_industry(1/pb)"
+    data_fields: [pb]
+    sign: 1
+    gate_status: PENDING_GATE
+
+  quality_value_composite:
+    type: fundamental
+    category: value_repair
+    priority: P1
+    description: "Quality-value composite score"
+    formula: "rank(industry_relative_ep) + rank(roe_stability)"
+    data_fields: [pe, roe]
+    sign: 1
+    gate_status: PENDING_GATE
+    pit_required: true
+
+  # ===========================================================================
+  # V4 Industry Relative Momentum factors (P1)
+  # ===========================================================================
+  industry_relative_momentum_60:
+    type: technical
+    category: industry_relative
+    priority: P1
+    description: "Industry-relative momentum (60d, skip 5d)"
+    formula: "rank_within_industry(momentum_60_skip5)"
+    data_fields: [adj_close]
+    sign: 1
+    gate_status: PENDING_GATE
+
+  industry_relative_quality:
+    type: fundamental
+    category: industry_relative
+    priority: P1
+    description: "Industry-relative quality rank"
+    formula: "rank_within_industry(profitability_quality)"
+    data_fields: [roe, grossprofit_margin, ocf]
+    sign: 1
+    gate_status: PENDING_GATE
+    pit_required: true
+
+# ===========================================================================
+# Enabled factors (for factor_dynamic and regime strategy modes)
+# ===========================================================================
+# V4 enabled factors: legacy working factors + V4 improvements
+# Rationale:
+#   - ep_cs, bp_cs, sp_cs: legacy value factors (LEAKAGE_METADATA_MISSING only, signal quality OK)
+#   - reversal_5_cs: short-term reversal (marginal but useful in range-bound)
+#   - pv_divergence_20_cs: price-volume divergence (only passing technical factor)
+#   - volatility_60_cs: low volatility (WATCH_NEUTRAL_ONLY, as risk constraint)
+#   - log_market_cap_cs: size (used for neutralization)
+#   - momentum_60_skip5_cs: V4 skip-window momentum
+#   - momentum_120_skip20_cs: V4 long-term skip momentum
+#   - risk_adjusted_momentum_60_cs: V4 risk-adjusted momentum
+#   - volume_confirmed_momentum_cs: V4 volume-confirmed momentum
+#   - trend_quality_cs: V4 trend quality
+#   - industry_relative_momentum_60_cs: V4 industry-relative momentum
+#   - industry_relative_ep_cs: V4 industry-relative EP
+#   - industry_relative_bp_cs: V4 industry-relative BP
+enabled_factors:
+  # V4-lite: Legacy V3 factors (pipeline-validated) + V4 regime improvement
+  - ep_cs
+  - bp_cs
+  - sp_cs
+  - reversal_5_cs
+  - pv_divergence_20_cs
+
+  # Risk / size / volatility (for neutralization & defensive sleeve)
+  - volatility_60_cs
+  - log_market_cap_cs
+
+disabled_factors:
+  reversal_20_cs: "ICIR < 0.20; redundant with reversal_5_cs"
+  rsi_14_cs: "ICIR < 0.15; near random"
+  volatility_20_cs: "ICIR < 0.10; migrate to risk constraint"
+  momentum_60_cs: "ICIR < 0.02; replaced by momentum_60_skip5_cs"
+  momentum_120_cs: "ICIR < 0.22; replaced by momentum_120_skip20_cs"
+  macd_12_26_9_cs: "ICIR < 0.06; near zero"
+
+# ===========================================================================
+# Composite configuration (reuse existing ICWeighting)
+# ===========================================================================
+composite:
+  ic_window_months: 12
+  ic_method: "rank"
+  shrinkage: 0.3
+  weight_cap: 0.30
+  min_ic_obs: 20
+  min_icir: 0.0
+  hard_cap: false
+  horizon: 5
+  min_active_factors: 1
+  coverage_gate_enabled: false
+  sign_stability_check: true
+  min_date_coverage: 0.70
+  min_stocks_per_date: 30
+  min_merge_rate: 0.30
+
+# ===========================================================================
+# PIT alignment (V4)
+# ===========================================================================
+pit_alignment:
+  fundamental_use_ann_date: true
+  fundamental_max_stale_trading_days: 63
+  technical_max_stale_trading_days: 5
+  fundamental_factors:
+    - ep_cs
+    - bp_cs
+    - sp_cs
+    - log_market_cap_cs
+    - roe_stability_8q_cs
+    - gross_margin_ttm_cs
+    - profitability_quality_cs
+    - ocf_to_mktcap_cs
+    - ocf_to_profit_cs
+    - fcf_yield_cs
+    - revenue_growth_ttm_cs
+    - profit_growth_ttm_cs
+    - earnings_acceleration_cs
+    - industry_relative_ep_cs
+    - industry_relative_bp_cs
+    - quality_value_composite_cs
+    - industry_relative_quality_cs
+
+cross_section:
+  winsor_method: "mad"
+  mad_multiplier: 5.0
+  quantile_lower: 0.01
+  quantile_upper: 0.99
+  missing_method: "industry_median"
+  min_coverage: 0.5
+  neutralize: true
+  neutralizers: ["industry", "log_market_cap"]
+  neutralize_method: "ols_residual"
+  standardize: "zscore"
+  min_stocks_for_cs: 30
+
+# ===========================================================================
+# NOTES
+# ===========================================================================
+# - factors marked PENDING_GATE must pass factor_quality_rebuild.py gate
+#   before being activated in composite scoring.
+# - factors that FAIL gate will be moved to configs/factor_rejection_log_v4.md
+# - the final enabled set must contain >= 8 factors with at least 2 per sleeve.
+# - if < 5 PASS/WATCH factors total, stop strategy assembly and return to M3.

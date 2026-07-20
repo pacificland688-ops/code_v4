@@ -1,0 +1,476 @@
+# ===========================================================================
+# V4 Alpha Factor Universe — Complete Candidate Pool
+# ===========================================================================
+# 包含 6 大类因子：质量、现金流、成长、估值修复、行业相对强弱、风险调整动量
+# 所有基本面因子必须通过 PIT 审计后才能进入质量 gate 和候选池。
+#
+# 优先级:
+#   P0 = 必须（对应已知失败年份主因缺口）
+#   P1 = 强烈建议（对应次因缺口或增强 P0 覆盖）
+#   P2 = 可选增强
+# ===========================================================================
+
+factors:
+  # =========================================================================
+  # 质量类 (Quality) — P0
+  # 目标: 区分真便宜与价值陷阱，提高 value sleeve 稳定性
+  # =========================================================================
+  - name: roe_stability_8q_cs
+    category: quality
+    type: fundamental
+    priority: P0
+    sign_hint: positive
+    description: "ROE 8 季度稳定性（波动率越低越好）"
+    data_sources: [fina_indicator]
+    required_fields:
+      fina_indicator: [roe]
+    window_quarters: 8
+
+  - name: roa_ttm_cs
+    category: quality
+    type: fundamental
+    priority: P2
+    sign_hint: positive
+    description: "ROA TTM（杠杆中性的盈利指标）"
+    data_sources: [fina_indicator]
+    required_fields:
+      fina_indicator: [roa]
+
+  - name: gross_margin_ttm_cs
+    category: quality
+    type: fundamental
+    priority: P0
+    sign_hint: positive
+    description: "毛利率 TTM（定价权指标）"
+    data_sources: [fina_indicator]
+    required_fields:
+      fina_indicator: [grossprofit_margin]
+
+  - name: net_margin_ttm_cs
+    category: quality
+    type: fundamental
+    priority: P2
+    sign_hint: positive
+    description: "净利率 TTM（费用控制能力）"
+    data_sources: [fina_indicator]
+    required_fields:
+      fina_indicator: [netprofit_margin]
+
+  - name: profitability_quality_cs
+    category: quality
+    type: fundamental
+    priority: P0
+    sign_hint: positive
+    description: "盈利质量综合得分（毛利率 + 净利率 + ROE 排名）"
+    data_sources: [fina_indicator]
+    required_fields:
+      fina_indicator: [grossprofit_margin, netprofit_margin, roe]
+
+  - name: asset_turnover_ttm_cs
+    category: quality
+    type: fundamental
+    priority: P2
+    sign_hint: positive
+    description: "资产周转率 TTM（运营效率，杜邦分解）"
+    data_sources: [fina_indicator]
+    required_fields:
+      fina_indicator: [asset_turnover]
+
+  # =========================================================================
+  # 现金流类 (Cashflow) — P0
+  # 目标: 用经营现金流验证利润质量，降低财务报表噪声
+  # =========================================================================
+  - name: ocf_to_mktcap_cs
+    category: cashflow
+    type: fundamental
+    priority: P0
+    sign_hint: positive
+    description: "经营现金流 / 市值（现金流角度估值）"
+    data_sources: [fina_indicator, daily_basic]
+    required_fields:
+      fina_indicator: [ocf]
+      daily_basic: [total_mv]
+
+  - name: ocf_to_profit_cs
+    category: cashflow
+    type: fundamental
+    priority: P0
+    sign_hint: positive
+    description: "经营现金流 / 净利润（>1 利润真实；<1 应计操纵风险）"
+    data_sources: [fina_indicator]
+    required_fields:
+      fina_indicator: [ocf, profit_dedt]
+
+  - name: fcf_yield_cs
+    category: cashflow
+    type: fundamental
+    priority: P0
+    sign_hint: positive
+    description: "自由现金流收益率（FCF / 市值）"
+    data_sources: [fina_indicator, daily_basic]
+    required_fields:
+      fina_indicator: [fcf]
+      daily_basic: [total_mv]
+
+  - name: cashflow_stability_8q_cs
+    category: cashflow
+    type: fundamental
+    priority: P2
+    sign_hint: positive
+    description: "8 季度经营现金流稳定性（越低越好）"
+    data_sources: [fina_indicator]
+    required_fields:
+      fina_indicator: [ocf]
+    window_quarters: 8
+
+  - name: accrual_quality_cs
+    category: cashflow
+    type: fundamental
+    priority: P2
+    sign_hint: positive
+    description: "应计质量 = (净利润 - 经营现金流) / 总资产（越低越好）"
+    data_sources: [fina_indicator]
+    required_fields:
+      fina_indicator: [profit_dedt, ocf, total_assets]
+
+  - name: receivable_pressure_cs
+    category: cashflow
+    type: fundamental
+    priority: P2
+    sign_hint: negative
+    description: "应收账款压力 = 应收账款/收入变化率（越高风险越大）"
+    data_sources: [fina_indicator]
+    required_fields:
+      fina_indicator: [accounts_receivable, revenue]
+
+  # =========================================================================
+  # 成长类 (Growth) — P0
+  # 目标: 覆盖 2017、2019、2020 等成长驱动环境
+  # =========================================================================
+  - name: revenue_growth_ttm_cs
+    category: growth
+    type: fundamental
+    priority: P0
+    sign_hint: positive
+    description: "收入 TTM 同比增长率"
+    data_sources: [income]
+    required_fields:
+      income: [revenue]
+
+  - name: profit_growth_ttm_cs
+    category: growth
+    type: fundamental
+    priority: P0
+    sign_hint: positive
+    description: "净利润 TTM 同比增长率"
+    data_sources: [income]
+    required_fields:
+      income: [n_income]
+
+  - name: growth_stability_8q_cs
+    category: growth
+    type: fundamental
+    priority: P1
+    sign_hint: positive
+    description: "8 季度盈利增长波动率（越低越好）"
+    data_sources: [income]
+    required_fields:
+      income: [n_income]
+    window_quarters: 8
+
+  - name: growth_value_match_cs
+    category: growth
+    type: fundamental
+    priority: P2
+    sign_hint: positive
+    description: "成长-估值匹配度（高增长 + 合理估值）"
+    data_sources: [income, daily_basic]
+    required_fields:
+      income: [revenue, n_income]
+      daily_basic: [pe]
+
+  - name: earnings_acceleration_cs
+    category: growth
+    type: fundamental
+    priority: P0
+    sign_hint: positive
+    description: "盈利加速度（盈利增速的二阶导，捕捉拐点）"
+    data_sources: [income]
+    required_fields:
+      income: [n_income]
+
+  # =========================================================================
+  # 估值修复类 (Value Repair) — P1
+  # 目标: 保留 value 有效部分，但避免机械低估值
+  # =========================================================================
+  - name: industry_relative_ep_cs
+    category: value_repair
+    type: fundamental
+    priority: P1
+    sign_hint: positive
+    description: "EP 在行业内排名（消除行业间估值差异）"
+    data_sources: [daily_basic, industry_pit]
+    required_fields:
+      daily_basic: [pe]
+
+  - name: industry_relative_bp_cs
+    category: value_repair
+    type: fundamental
+    priority: P1
+    sign_hint: positive
+    description: "BP 在行业内排名"
+    data_sources: [daily_basic, industry_pit]
+    required_fields:
+      daily_basic: [pb]
+
+  - name: valuation_reversion_3y_cs
+    category: value_repair
+    type: fundamental
+    priority: P2
+    sign_hint: positive
+    description: "3 年估值分位修复（PE/PB 分位从低位回升）"
+    data_sources: [daily_basic]
+    required_fields:
+      daily_basic: [pe, pb]
+
+  - name: quality_value_composite_cs
+    category: value_repair
+    type: fundamental
+    priority: P1
+    sign_hint: positive
+    description: "质量+价值综合评分（低估值 + 高质量）"
+    data_sources: [daily_basic, fina_indicator]
+    required_fields:
+      daily_basic: [pe, pb]
+      fina_indicator: [roe]
+
+  - name: dividend_quality_cs
+    category: value_repair
+    type: fundamental
+    priority: P2
+    sign_hint: positive
+    description: "股息质量（高股息 + 盈利稳定性 + 低负债）"
+    data_sources: [fina_indicator, daily_basic]
+    required_fields:
+      fina_indicator: [roe]
+      daily_basic: [total_mv]
+
+  # =========================================================================
+  # 行业相对强弱类 (Industry Relative) — P1
+  # 目标: 降低全市场风格漂移影响，用行业内排序提升可比性
+  # =========================================================================
+  - name: industry_relative_momentum_60_cs
+    category: industry_relative
+    type: technical
+    priority: P1
+    sign_hint: positive
+    description: "行业内 60 日动量排名（跳过最近 5 日）"
+    data_sources: [prices_adj, industry_pit]
+
+  - name: industry_relative_quality_cs
+    category: industry_relative
+    type: fundamental
+    priority: P1
+    sign_hint: positive
+    description: "行业内质量排名（ROE + 毛利率 + 现金流）"
+    data_sources: [fina_indicator, industry_pit]
+    required_fields:
+      fina_indicator: [roe, grossprofit_margin, ocf]
+
+  - name: industry_relative_growth_cs
+    category: industry_relative
+    type: fundamental
+    priority: P2
+    sign_hint: positive
+    description: "行业内成长排名（收入增长 + 利润增长）"
+    data_sources: [income, industry_pit]
+    required_fields:
+      income: [revenue, n_income]
+
+  - name: industry_relative_value_cs
+    category: industry_relative
+    type: fundamental
+    priority: P2
+    sign_hint: positive
+    description: "行业内估值排名（PE + PB 行业内排名）"
+    data_sources: [daily_basic, industry_pit]
+    required_fields:
+      daily_basic: [pe, pb]
+
+  # =========================================================================
+  # 风险调整动量类 (Risk-Adjusted Momentum) — P2
+  # 目标: 修复现有 momentum 类因子在验证期不稳定的问题
+  # =========================================================================
+  - name: momentum_60_skip5_cs
+    category: risk_adj_momentum
+    type: technical
+    priority: P2
+    sign_hint: positive
+    description: "60 日动量跳过最近 5 日（消除反转干扰）"
+    data_sources: [prices_adj]
+
+  - name: momentum_120_skip20_cs
+    category: risk_adj_momentum
+    type: technical
+    priority: P2
+    sign_hint: positive
+    description: "120 日动量跳过最近 20 日"
+    data_sources: [prices_adj]
+
+  - name: risk_adjusted_momentum_60_cs
+    category: risk_adj_momentum
+    type: technical
+    priority: P2
+    sign_hint: positive
+    description: "风险调整动量 = 60 日动量 / 60 日波动率"
+    data_sources: [prices_adj]
+
+  - name: volume_confirmed_momentum_cs
+    category: risk_adj_momentum
+    type: technical
+    priority: P2
+    sign_hint: positive
+    description: "放量确认动量（价涨量增）"
+    data_sources: [prices_adj]
+    required_fields:
+      prices_adj: [vol]
+
+  - name: trend_quality_cs
+    category: risk_adj_momentum
+    type: technical
+    priority: P2
+    sign_hint: positive
+    description: "趋势质量（趋势延续但避开极端拥挤）"
+    data_sources: [prices_adj]
+
+# =========================================================================
+# Reversal Repair - P1
+# Target: keep short-term reversal alpha but filter liquidity and volatility noise.
+# =========================================================================
+  - name: reversal_5_liquidity_adj_cs
+    category: reversal_repair
+    type: technical
+    priority: P1
+    sign_hint: positive
+    description: "5-day reversal adjusted by liquidity rank and volatility quality"
+    data_sources: [prices_adj]
+    required_fields:
+      prices_adj: [adj_close, amount]
+
+  - name: reversal_20_vol_adj_cs
+    category: reversal_repair
+    type: technical
+    priority: P1
+    sign_hint: positive
+    description: "20-day reversal scaled by 60-day realized volatility"
+    data_sources: [prices_adj]
+    required_fields:
+      prices_adj: [adj_close]
+
+  - name: reversal_5_liquidity_adj_weekly_cs
+    category: reversal_repair
+    type: technical
+    priority: P1
+    sign_hint: positive
+    description: "Weekly 5-day liquidity-adjusted reversal with light smoothing"
+    data_sources: [prices_adj]
+    required_fields:
+      prices_adj: [adj_close, amount]
+
+  - name: reversal_20_vol_adj_weekly_cs
+    category: reversal_repair
+    type: technical
+    priority: P1
+    sign_hint: positive
+    description: "Weekly 20-day volatility-adjusted reversal with smoothing"
+    data_sources: [prices_adj]
+    required_fields:
+      prices_adj: [adj_close]
+
+# =========================================================================
+# Risk Premium Repair - P1
+# Target: defensive alpha should be benchmark-aware, not simple low volatility.
+# =========================================================================
+  - name: low_beta_60_cs
+    category: risk_premium
+    type: technical
+    priority: P1
+    sign_hint: positive
+    description: "Negative 60-day beta versus equal-weight market return"
+    data_sources: [prices_adj]
+    required_fields:
+      prices_adj: [adj_close]
+
+  - name: drawdown_resilience_cs
+    category: risk_premium
+    type: technical
+    priority: P1
+    sign_hint: positive
+    description: "60-day drawdown resilience plus 20-day recovery quality"
+    data_sources: [prices_adj]
+    required_fields:
+      prices_adj: [adj_close]
+
+  - name: low_beta_120_monthly_cs
+    category: risk_premium
+    type: technical
+    priority: P1
+    sign_hint: positive
+    description: "Monthly stable low-beta factor using a 120-day beta window"
+    data_sources: [prices_adj]
+    required_fields:
+      prices_adj: [adj_close]
+
+  - name: drawdown_resilience_monthly_cs
+    category: risk_premium
+    type: technical
+    priority: P1
+    sign_hint: positive
+    description: "Monthly drawdown-resilience factor using a 120-day drawdown window"
+    data_sources: [prices_adj]
+    required_fields:
+      prices_adj: [adj_close]
+
+# ===========================================================================
+# Cross-sectional processing (reuse existing CS pipeline)
+# ===========================================================================
+cross_section:
+  winsor_method: "mad"
+  mad_multiplier: 5.0
+  quantile_lower: 0.01
+  quantile_upper: 0.99
+  missing_method: "industry_median"
+  min_coverage: 0.5
+  neutralize: true
+  neutralizers: ["industry", "log_market_cap"]
+  neutralize_method: "ols_residual"
+  standardize: "zscore"
+  min_stocks_for_cs: 30
+
+# ===========================================================================
+# PIT alignment rules
+# ===========================================================================
+pit:
+  fundamental_use_ann_date: true
+  fundamental_max_lag_months: 8
+  max_lag_days:
+    technical: 7
+    fundamental: 63
+    financial_statement: 120
+  conservative_fallback:
+    annual_report_lag: 120     # days after fiscal year end
+    semi_annual_lag: 60
+    quarterly_lag: 30
+
+# ===========================================================================
+# Existing factors (reused from V2/V3, not rebuilt)
+# ===========================================================================
+legacy_factors:
+  - ep_cs
+  - bp_cs
+  - sp_cs
+  - reversal_5_cs
+  - pv_divergence_20_cs
+  - volatility_20_cs
+  - volatility_60_cs
+  - log_market_cap_cs

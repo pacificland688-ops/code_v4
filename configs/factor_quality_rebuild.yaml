@@ -1,0 +1,275 @@
+# Factor Quality Rebuild — Configuration
+# ========================================
+# Calibration: 2017-2020 (direction, transform, parameter selection)
+# Validation:   2021-2024 (final gate, must not be used for tuning)
+# Watch-only:   2025-2026 (if data exists, report only, no gate impact)
+
+windows:
+  calibration:
+    start: "20170101"
+    end: "20201231"
+  validation:
+    start: "20210101"
+    end: "20241231"
+  watch_only:
+    start: "20250101"
+    end: "20260605"
+
+# Primary and auxiliary forward-return horizons
+horizons:
+  primary: "fwd_ret_5d"
+  auxiliary: ["fwd_ret_10d", "fwd_ret_20d"]
+
+# Cost assumptions (single-sided, in basis points)
+cost:
+  single_side_bps: 20          # 20 bps per side
+  round_trip_bps: 40           # implicit: 2 × single_side_bps
+  sensitivity: [10, 20, 30]    # sensitivity scenarios
+
+# Factor universe — all candidates for audit
+# role values:
+#   alpha_candidate — eligible for PASS/WATCH and candidate pool
+#   neutralizer     — used only for neutralization and exposure diagnosis
+#   support_only    — informational only, never enters candidate pool
+# data_lag_days:
+#   0 for technical/price-based factors (available same day after close)
+#   63 for fundamental factors (≈ 1 quarter financial reporting lag)
+# date_semantics:
+#   observation_date — trade_date in cache is the factor observation date;
+#                       signal_date = first_trading_day_on_or_after(observation_date + data_lag_days)
+# tradable_weighting:
+#   equal_weight — equal-weighted top/bottom quintile portfolio
+#   mcap_weight  — market-cap-weighted top/bottom quintile portfolio
+factors:
+  # --- Technical / price-based factors ---
+  - name: reversal_5_cs
+    category: reversal
+    type: technical
+    role: alpha_candidate
+    sign_hint: positive         # + means: higher factor → higher return expected
+    data_lag_days: 0
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+  - name: reversal_20_cs
+    category: reversal
+    type: technical
+    role: alpha_candidate
+    sign_hint: positive
+    data_lag_days: 0
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+  - name: momentum_60_cs
+    category: momentum
+    type: technical
+    role: alpha_candidate
+    sign_hint: positive
+    data_lag_days: 0
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+  - name: momentum_120_cs
+    category: momentum
+    type: technical
+    role: alpha_candidate
+    sign_hint: positive
+    data_lag_days: 0
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+  - name: volatility_20_cs
+    category: volatility
+    type: technical
+    role: alpha_candidate
+    sign_hint: negative         # low vol → higher return
+    data_lag_days: 0
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+  - name: volatility_60_cs
+    category: volatility
+    type: technical
+    role: alpha_candidate
+    sign_hint: negative
+    data_lag_days: 0
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+  - name: rsi_14_cs
+    category: oscillator
+    type: technical
+    role: alpha_candidate
+    sign_hint: negative         # oversold → higher return
+    data_lag_days: 0
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+  - name: macd_12_26_9_cs
+    category: oscillator
+    type: technical
+    role: alpha_candidate
+    sign_hint: positive
+    data_lag_days: 0
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+  - name: pv_divergence_20_cs
+    category: price_volume
+    type: technical
+    role: alpha_candidate
+    sign_hint: positive
+    data_lag_days: 0
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+  # --- Fundamental / value factors ---
+  - name: ep_cs
+    category: value
+    type: fundamental
+    role: alpha_candidate
+    sign_hint: positive
+    data_lag_days: 63
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+  - name: bp_cs
+    category: value
+    type: fundamental
+    role: alpha_candidate
+    sign_hint: positive
+    data_lag_days: 63
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+  - name: sp_cs
+    category: value
+    type: fundamental
+    role: alpha_candidate
+    sign_hint: positive
+    data_lag_days: 63
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+  # --- Fundamental / quality factors ---
+  - name: roe_cs
+    category: quality
+    type: fundamental
+    role: alpha_candidate
+    sign_hint: positive
+    data_lag_days: 63
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+  - name: gross_margin_cs
+    category: quality
+    type: fundamental
+    role: alpha_candidate
+    sign_hint: positive
+    data_lag_days: 63
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+  - name: profit_growth_cs
+    category: growth
+    type: fundamental
+    role: alpha_candidate
+    sign_hint: positive
+    data_lag_days: 63
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+  - name: revenue_growth_cs
+    category: growth
+    type: fundamental
+    role: alpha_candidate
+    sign_hint: positive
+    data_lag_days: 63
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+  - name: leverage_cs
+    category: risk
+    type: fundamental
+    role: alpha_candidate
+    sign_hint: negative
+    data_lag_days: 63
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+  # --- Size (for neutralization only) ---
+  - name: log_market_cap_cs
+    category: size
+    type: fundamental
+    role: neutralizer
+    sign_hint: negative
+    data_lag_days: 0
+    date_semantics: observation_date
+    tradable_weighting: equal_weight
+
+# Neutralization diagnostic
+neutralization:
+  enabled: true
+  # Test each factor before and after market-cap neutralization
+  neutralizers:
+    - name: "none"
+      description: "Raw CS factor (already winsorized + standardized)"
+    - name: "mcap"
+      description: "log_market_cap_cs OLS residual"
+  min_neutralizer_coverage_pct: 70  # neutralizer must cover >=70% of stocks on a date
+  min_stocks: 30
+  min_valid_neutralized_dates: 60   # min valid neutralized dates in validation window
+  max_skipped_date_pct: 50          # max % of dates that can be skipped
+  require_valid_neutralization_for_neutral_gate: true
+
+# Gate basis — dual raw + mcap-neutral reporting
+gate_basis:
+  raw_required: true
+  neutralized_required_for_pass: true
+  raw_pass_neutral_fail_status: WATCH_SIZE_DEPENDENT
+  raw_fail_neutral_pass_status: WATCH_NEUTRAL_ONLY
+  # Final state mapping:
+  #   raw PASS + neutral PASS → PASS
+  #   raw PASS + neutral FAIL → WATCH_SIZE_DEPENDENT
+  #   raw FAIL + neutral PASS → WATCH_NEUTRAL_ONLY
+  #   raw FAIL + neutral FAIL → FAIL
+  #   any + hard-gate fail (no-leakage/capacity/data) → FAIL
+
+# Quality gate thresholds
+gate:
+  # Data quality
+  min_coverage_pct: 80           # median coverage across validation dates
+  min_single_year_coverage_pct: 60  # no single validation year below this
+  max_missing_rate: 0.20         # max fraction of missing values (changed from 0.50)
+  # IC
+  min_mean_rank_ic: 0.01
+  min_icir: 0.20
+  min_positive_ic_years: 3       # out of 4 validation years
+  # Quantile returns
+  min_top_bottom_net_spread_5d: 0.0  # net (after cost) spread must be positive
+  min_positive_spread_years: 3
+  min_top_quintile_net_excess_5d: 0.0
+  min_positive_excess_years: 3
+  # Cost resilience
+  min_net_gross_spread_ratio: 0.50  # net/gross >= 50%
+  # Concentration
+  max_single_year_contribution_pct: 60  # no single year > 60% of total net spread
+  # No-leakage
+  require_no_leakage: true
+  max_factor_lag_days:
+    technical: 7
+    fundamental: 63
+
+# Robustness checks
+robustness:
+  enable_ic_trend_check: true
+  ic_decay_p_value: 0.10         # p-value threshold for significant IC decline
+  rolling_windows:
+    - {name: "2018_2021", start: "20180101", end: "20211231"}
+    - {name: "2019_2022", start: "20190101", end: "20221231"}
+    - {name: "2020_2023", start: "20200101", end: "20231231"}
+    - {name: "2021_2024", start: "20210101", end: "20241231", primary: true}
+  min_pass_windows_for_strong_pass: 3  # must PASS in ≥3 of 4 windows
+
+# Capacity / liquidity screening
+capacity:
+  enabled: true
+  target_aum_cny: 1000000000      # 1 billion CNY
+  max_participation_rate: 0.05    # max 5% of daily volume
+  min_median_amount_cny: 20000000 # min 20M CNY median daily amount
+  capacity_watch_if_unavailable: true
+  daily_basic_mv_unit: "wan_cny"  # Tushare total_mv/circ_mv are in 万元
+  amount_unit: "derived_from_circ_mv"
+  assumed_daily_turnover: 0.05    # fallback daily turnover for capacity estimation
+
+# Correlation clustering
+correlation:
+  max_intra_cluster_corr: 0.85    # factors with abs(corr) > this go into same cluster
+  cluster_representative: "gate_score"  # keep the one with highest gate score
+
+# Output
+output:
+  candidate_pool: "factor_candidate_pool.yaml"

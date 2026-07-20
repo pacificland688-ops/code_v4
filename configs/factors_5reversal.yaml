@@ -1,0 +1,94 @@
+# ============================================================================
+# Legacy 5-reversal-factor configuration — for A/B regression testing.
+#
+# Usage (A/B baseline):
+#   python run_research.py phase2 --start 20170101 --end 20251231 \
+#       --top-n 50 --factors-config configs/factors_5reversal.yaml
+#
+# This file encodes the EXACT pre-refactor behaviour:
+#   - 5 reversal factors only
+#   - All new gates disabled (min_icir=0, hard_cap=false, coverage_gate_enabled=false)
+#   - Default IC weighting parameters
+#
+# It should produce output bitwise-identical to the current default
+# configs/factors.yaml (which also lists the same 5 factors).
+# ============================================================================
+
+# ---------------------------------------------------------------------------
+# Cross-section processing parameters (unchanged from factors.yaml)
+# ---------------------------------------------------------------------------
+cross_section:
+  winsor_method: "mad"
+  mad_multiplier: 5.0
+  quantile_lower: 0.01
+  quantile_upper: 0.99
+  missing_method: "industry_median"
+  min_coverage: 0.5
+  neutralize: true
+  neutralizers: ["industry", "log_market_cap"]
+  neutralize_method: "ols_residual"
+  standardize: "zscore"
+  min_stocks_for_cs: 30
+
+# ---------------------------------------------------------------------------
+# Factor evaluation parameters
+# ---------------------------------------------------------------------------
+evaluation:
+  horizons: [1, 5, 10, 20]
+  quantile_groups: 5
+  annual_periods:
+    - [2016, 2018]
+    - [2019, 2021]
+    - [2022, 2024]
+    - [2025, 2026]
+  min_mean_ic: 0.02
+  min_icir: 0.3
+  min_ic_positive_rate: 0.52
+
+# ---------------------------------------------------------------------------
+# Composite score — LEGACY DEFAULTS (no behaviour change)
+# ---------------------------------------------------------------------------
+composite:
+  ic_window_months: 12
+  ic_method: "rank"
+  shrinkage: 0.3
+  weight_cap: 0.3
+  min_ic_obs: 20
+  min_icir: 0.0                  # disabled
+  hard_cap: false                # disabled
+  horizon: 5
+  min_active_factors: 1          # disabled (accept single-factor)
+  coverage_gate_enabled: false   # disabled
+  sign_stability_check: true
+  # Coverage gate parameters (ignored when coverage_gate_enabled=false)
+  min_date_coverage: 0.70
+  min_stocks_per_date: 30
+  min_merge_rate: 0.30
+
+# ---------------------------------------------------------------------------
+# Factor selection — 5 reversal factors (legacy whitelist)
+# ---------------------------------------------------------------------------
+enabled_factors:
+  - reversal_5_cs
+  - reversal_20_cs
+  - pv_divergence_20_cs
+  - rsi_14_cs
+  - volatility_20_cs
+
+disabled_factors:
+  momentum_60_cs: "ICIR < 0.1, sign unstable in recent regimes"
+  momentum_120_cs: "ICIR < 0.1, sign unstable in recent regimes"
+  volatility_60_cs: "Redundant with volatility_20_cs, weaker IC"
+  ivol_20_cs: "Requires industry regression, noisy in short window"
+  turnover_5_cs: "High turnover contribution, low IC"
+  abnormal_turnover_20_cs: "High turnover contribution, IC near zero"
+  macd_12_26_9_cs: "IC near zero in bull markets"
+  ep_cs: "Fundamental data gaps cause coverage issues"
+  bp_cs: "Fundamental data gaps cause coverage issues"
+  sp_cs: "Fundamental data gaps cause coverage issues"
+  roe_cs: "Fundamental data gaps cause coverage issues"
+  gross_margin_cs: "Fundamental data gaps cause coverage issues"
+  revenue_growth_cs: "Fundamental data gaps cause coverage issues"
+  profit_growth_cs: "Fundamental data gaps cause coverage issues"
+  leverage_cs: "Fundamental data gaps cause coverage issues"
+  size_cs: "Used for neutralization, not as alpha factor"

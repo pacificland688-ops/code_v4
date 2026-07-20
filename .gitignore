@@ -1,0 +1,41 @@
+# 凭证 / 环境
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# 数据缓存与输出
+data/cache/
+data/parquet/
+outputs/
+logs/
+*.parquet
+*.feather
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Pytest
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Conda / virtualenv
+.venv/
+venv/
+*.egg-info/

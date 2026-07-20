@@ -1,0 +1,110 @@
+# ===========================================================================
+# Factors Candidate V4 R1 — Repaired Alpha Rebuild Pool
+# ===========================================================================
+factors:
+  ep:
+    type: fundamental
+    category: value
+    description: "Earnings-to-price = 1/PE"
+    data_fields: [pe]
+    sign: 1
+  bp:
+    type: fundamental
+    category: value
+    description: "Book-to-price = 1/PB"
+    data_fields: [pb]
+    sign: 1
+  sp:
+    type: fundamental
+    category: value
+    description: "Sales-to-price = 1/PS"
+    data_fields: [ps]
+    sign: 1
+  reversal_5:
+    type: technical
+    category: reversal
+    description: "5-day short-term reversal"
+    data_fields: [adj_close]
+    window: 5
+    sign: 1
+  pv_divergence_20:
+    type: technical
+    category: price_volume
+    description: "Price-volume divergence"
+    data_fields: [adj_close, vol]
+    window: 20
+    sign: 1
+  volatility_60:
+    type: technical
+    category: volatility
+    description: "60-day volatility"
+    data_fields: [adj_close]
+    window: 60
+    sign: -1
+  log_market_cap:
+    type: fundamental
+    category: size
+    description: "Log total market cap"
+    data_fields: [total_mv]
+    sign: -1
+
+enabled_factors:
+  # Legacy V2/V3 value factors
+  - ep_cs
+  - bp_cs
+  - sp_cs
+  - reversal_5_cs
+  - pv_divergence_20_cs
+
+  # V4 Growth factors (from Tushare income data, 2017-2024)
+  - revenue_growth_ttm_cs
+  - profit_growth_ttm_cs
+  - earnings_acceleration_cs
+  - growth_stability_8q_cs
+
+  # V4 Risk-Adjusted Momentum factors
+  - momentum_60_skip5_cs
+  - momentum_120_skip20_cs
+  - risk_adjusted_momentum_60_cs
+  - volume_confirmed_momentum_cs
+  - trend_quality_cs
+
+  # V4 Industry Relative factors
+  - industry_relative_ep_cs
+  - industry_relative_bp_cs
+  - industry_relative_momentum_60_cs
+
+  # Risk / size (for neutralization & defensive sleeve)
+  - volatility_60_cs
+  - log_market_cap_cs
+
+disabled_factors:
+  reversal_20_cs: "ICIR < 0.20; redundant with reversal_5_cs"
+  momentum_60_cs: "Replaced by momentum_60_skip5_cs"
+  momentum_120_cs: "Replaced by momentum_120_skip20_cs"
+  macd_12_26_9_cs: "ICIR < 0.06"
+  rsi_14_cs: "ICIR < 0.15"
+
+composite:
+  ic_window_months: 12
+  shrinkage: 0.3
+  weight_cap: 0.30
+  min_ic_obs: 20
+  min_icir: 0.0
+  hard_cap: false
+  horizon: 5
+  min_active_factors: 1
+  coverage_gate_enabled: false
+  sign_stability_check: true
+  min_date_coverage: 0.70
+  min_stocks_per_date: 30
+  min_merge_rate: 0.30
+
+cross_section:
+  winsor_method: "mad"
+  mad_multiplier: 5.0
+  min_coverage: 0.5
+  neutralize: true
+  neutralizers: ["industry", "log_market_cap"]
+  standardize: "zscore"
+  min_stocks_for_cs: 30

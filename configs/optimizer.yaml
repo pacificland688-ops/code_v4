@@ -1,0 +1,160 @@
+# code_v4 Portfolio Optimizer Configuration
+# ============================================
+# Mean-variance optimization with A-share constraints.
+# Follows CQF Module 2: Portfolio Management and Optimization.
+
+optimizer:
+  # -----------------------------------------------------------------------
+  # Score-to-expected-return calibration
+  # -----------------------------------------------------------------------
+  score_calibration:
+    method: "rolling_ic"          # "rolling_ic", "historical_regression", or "rank_only"
+    # Method 1: μ_i = score_i * rolling_IC * cross_section_return_vol
+    rolling_ic_window: 60         # trading days for rolling IC
+    vol_window: 60                # trading days for cross-sectional return vol
+    # Method 2: historical regression forward_return ~ score
+    regression_window: 252        # trading days
+    regression_min_obs: 60
+
+  # -----------------------------------------------------------------------
+  # Covariance estimation
+  # -----------------------------------------------------------------------
+  covariance:
+    method: "ledoit_wolf"         # "sample", "ledoit_wolf", "factor_model"
+    window: 252                   # trading days for return covariance
+    min_obs: 60                   # minimum observations for valid estimate
+    shrinkage_target: "constant_correlation"  # for Ledoit-Wolf
+    # Factor model (if method="factor_model")
+    factor_model:
+      style_factors: ["size", "volatility", "momentum", "value", "quality"]
+      industry_factors: true
+      specific_risk: "equal"      # "equal" or "structural"
+
+  # -----------------------------------------------------------------------
+  # Optimization objective
+  # -----------------------------------------------------------------------
+  objective:
+    type: "mean_variance"         # "mean_variance", "risk_parity", "max_sharpe", "min_vol"
+    risk_aversion: 1.0            # λ in max w'μ - (λ/2) w'Σw
+    turnover_penalty: 0.0         # γ in -γ * ||w - w_prev||_1
+
+  # -----------------------------------------------------------------------
+  # Constraints
+  # -----------------------------------------------------------------------
+  constraints:
+    # Long-only
+    long_only: true
+    leverage: 1.0                 # sum of weights = 1.0 (fully invested)
+
+    # Individual stock bounds
+    weight_min: 0.0
+    weight_max: 0.02              # 2% max single stock weight
+
+    # Industry exposure (relative to benchmark)
+    industry_deviation_max: 0.05  # max 5% deviation from benchmark industry weight
+
+    # Stock deviation from benchmark
+    stock_deviation_max: 0.02     # max 2% deviation from benchmark weight per stock
+
+    # Turnover constraint (one-way)
+    turnover_max: 0.30            # max 30% one-way turnover per rebalance
+
+    # Number of holdings
+    min_holdings: 30
+    max_holdings: 100
+
+    # Untradable handling
+    freeze_untradable: true       # freeze weights for untradable stocks
+    redistribute_frozen: true     # redistribute frozen weight to tradable stocks
+
+  # -----------------------------------------------------------------------
+  # Solver configuration
+  # -----------------------------------------------------------------------
+  solver:
+    backend: "cvxpy"              # "cvxpy" or "scipy"
+    solver_name: "ECOS"           # "ECOS", "OSQP", "SCS"
+    max_iter: 10000
+    tolerance: 1e-6
+    verbose: false
+
+  # -----------------------------------------------------------------------
+  # Benchmark configuration
+  # -----------------------------------------------------------------------
+  benchmark:
+    type: "csi300"                # "csi300", "csi300_equal_weight"
+    index_code: "000300.SH"
+
+# ---------------------------------------------------------------------------
+# Preset configurations (Phase 2)
+# ---------------------------------------------------------------------------
+presets:
+  top50_weightmax2:
+    top_n: 50
+    weight_max: 0.02
+    turnover_max: 0.30
+    turnover_penalty: 0.005
+    description: "Top 50, 2% cap, 30% turnover limit"
+
+  top50_weightmax3:
+    top_n: 50
+    weight_max: 0.03
+    turnover_max: 0.40
+    turnover_penalty: 0.005
+    description: "Top 50, 3% cap — more optimizer space"
+
+  top50_weightmax5:
+    top_n: 50
+    weight_max: 0.05
+    turnover_max: 0.50
+    turnover_penalty: 0.003
+    description: "Top 50, 5% cap — significant optimizer space"
+
+  top100_weightmax2:
+    top_n: 100
+    weight_max: 0.02
+    turnover_max: 0.30
+    turnover_penalty: 0.005
+    description: "Top 100, 2% cap"
+
+  top100_weightmax3:
+    top_n: 100
+    weight_max: 0.03
+    turnover_max: 0.40
+    turnover_penalty: 0.005
+    description: "Top 100, 3% cap"
+
+  buffer_top50_80:
+    top_n: 50
+    entry_rank: 50
+    exit_rank: 80
+    weight_max: 0.03
+    turnover_max: 0.30
+    description: "Buffer: enter Top50, exit below Top80"
+
+  buffer_top100_150:
+    top_n: 100
+    entry_rank: 100
+    exit_rank: 150
+    weight_max: 0.02
+    turnover_max: 0.30
+    description: "Buffer: enter Top100, exit below Top150"
+
+# ---------------------------------------------------------------------------
+# Risk management
+# ---------------------------------------------------------------------------
+risk:
+  # VaR / ES
+  var_confidence: 0.95
+  es_confidence: 0.975
+  var_window: 252
+
+  # Volatility targeting
+  target_volatility: 0.15         # annualized target (15%)
+  vol_scaling: false              # enable volatility scaling of weights
+
+  # Drawdown control
+  max_drawdown_hard_stop: 0.25    # stop trading at 25% drawdown from peak
+
+  # Exposure limits
+  max_net_exposure: 1.0
+  max_gross_exposure: 1.0

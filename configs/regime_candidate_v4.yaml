@@ -1,0 +1,176 @@
+# ===========================================================================
+# Regime Candidate V4 — Alpha Rebuild Sleeves & Regime Mapping
+# ===========================================================================
+# 基于 V4 候选因子池（configs/factors_candidate_v4.yaml）重新构建。
+# 核心变更 vs V3:
+#   - 新增 quality_value、cashflow_quality、growth_quality 三个 sleeve
+#   - risk_adjusted_momentum sleeve 替换旧的 momentum (单因子)
+#   - defensive_quality sleeve 增强（加入 profitability_quality）
+#   - Performance overlay 默认关闭（V4 先验证 alpha 供给侧改善）
+#
+# 原则:
+#   - 每个 sleeve 至少 2 个因子，避免单因子 sleeve
+#   - 每个 sleeve 有明确经济含义
+#   - 不使用验证结果硬调单一年份权重
+# ===========================================================================
+
+enabled: true
+
+regime_detector:
+  index_code: "000300.SH"
+  trend:
+    ma_short: 60
+    ma_long: 120
+    return_windows: [20, 60, 120]
+  volatility:
+    vol_windows: [20, 60]
+    drawdown_window: 60
+  breadth:
+    ma_window: 60
+    min_stocks: 100
+  smoothing:
+    halflife: 4
+
+# ===========================================================================
+# V4 Sleeve Definitions
+# MUST use canonical sleeve names: reversal, momentum, defensive, value, volume_price
+# ===========================================================================
+strategy_sleeves:
+  # Value sleeve — enhanced with V4 industry-relative value factors
+  value:
+    factors:
+      - ep_cs
+      - bp_cs
+      - sp_cs
+      - industry_relative_ep_cs
+      - industry_relative_bp_cs
+
+  # Momentum sleeve — V4: keep legacy pv_divergence only (momentum factors need pipeline calibration)
+  momentum:
+    factors:
+      - pv_divergence_20_cs
+      - reversal_5_cs
+
+  # Defensive sleeve — V4 enhanced with industry_relative_ep
+  defensive:
+    factors:
+      - volatility_60_cs
+      - log_market_cap_cs
+      - ep_cs
+      - bp_cs
+      - industry_relative_ep_cs
+
+  # Reversal sleeve — keep legacy
+  reversal:
+    factors:
+      - reversal_5_cs
+      - pv_divergence_20_cs
+
+  # Volume_price sleeve — keep legacy
+  volume_price:
+    factors:
+      - pv_divergence_20_cs
+      - reversal_5_cs
+      - industry_relative_bp_cs
+
+# ===========================================================================
+# Sleeve composite parameters (reuse ICWeighting)
+# ===========================================================================
+sleeve_composite:
+  ic_window_months: 12
+  shrinkage: 0.3
+  weight_cap: 0.50
+  min_ic_obs: 20
+  min_icir: 0.0
+  hard_cap: false
+  min_active_factors: 1
+  coverage_gate_enabled: false
+  sign_stability_check: true
+  horizon: 5
+
+# ===========================================================================
+# Performance Overlay — V4 DEFAULT OFF
+# ===========================================================================
+# V4 默认关闭 performance overlay，先验证 alpha 供给侧改善效果。
+# 如果 V4 no-overlay 结果改善显著，再在后续 phase 中测试 overlay 的边际贡献。
+#
+# 理由:
+#   1. V3 overlay 改善有限（+0.92pp），不能创造 alpha
+#   2. V4 重点是新增 alpha 供给，overlay 会混淆改善来源
+#   3. 保留 no-overlay 对照 → 后续可以准确度量 overlay 的纯边际贡献
+sleeve_performance_overlay:
+  enabled: false                # V4: 默认关闭
+
+  lookback_months: 6
+  horizon: 5
+  min_obs: 12
+  min_stocks: 30
+
+  icir_weight: 0.70
+  hit_rate_weight: 0.30
+  icir_scale: 0.50
+
+  strength: 0.40
+  neutral_multiplier: 1.00
+  multiplier_min: 0.60
+  multiplier_max: 1.60
+
+# ===========================================================================
+# Allocator — regime-to-sleeve weight mapping
+# ===========================================================================
+allocator:
+  min_sleeves: 2
+  sleeve_weight_cap: 0.50
+  sleeve_weight_floor: 0.05
+  max_weekly_weight_change: 0.15
+
+  # V4: Weights using canonical sleeve names
+  regime_to_sleeve_weights:
+    trend_up:
+      momentum: 0.40
+      volume_price: 0.25
+      value: 0.20
+      defensive: 0.10
+      reversal: 0.05
+
+    trend_down:
+      defensive: 0.45
+      value: 0.25
+      reversal: 0.10
+      volume_price: 0.10
+      momentum: 0.10
+
+    range_bound:
+      reversal: 0.25
+      value: 0.25
+      volume_price: 0.20
+      defensive: 0.15
+      momentum: 0.15
+
+    high_volatility:
+      defensive: 0.50
+      value: 0.20
+      reversal: 0.15
+      volume_price: 0.10
+      momentum: 0.05
+
+    value_rotation:
+      value: 0.45
+      defensive: 0.20
+      reversal: 0.15
+      momentum: 0.10
+      volume_price: 0.10
+
+# ===========================================================================
+# Factor alignment
+# ===========================================================================
+factor_alignment:
+  technical_max_stale_trading_days: 5
+  fundamental_max_stale_trading_days: 63
+  fundamental_factors:
+    - ep_cs
+    - bp_cs
+    - sp_cs
+    - log_market_cap_cs
+    - industry_relative_ep_cs
+    - industry_relative_bp_cs

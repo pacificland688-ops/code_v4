@@ -1,0 +1,429 @@
+# ===========================================================================
+# Photoresist Panic Reversal — Research Configuration
+# ===========================================================================
+# All parameters FROZEN before research begins.
+# Do NOT adjust based on test results — report all variants.
+#
+# References:
+#   - universe: configs/photoresist_universe.yaml
+#   - plan: docs/photoresist_panic_reversal_development_plan.md
+# ===========================================================================
+
+research:
+  name: "photoresist_panic_reversal"
+  version: "1.0.0"
+  status: "FROZEN"
+  date_range:
+    start: 20170101
+    end: 20251231
+  output_dir: "outputs/analysis/photoresist_panic"
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Primary Panic Gate (FROZEN — single definition)
+# ═══════════════════════════════════════════════════════════════════════════
+panic_gate:
+  description: "主 panic gate，只设一套，在研究开始前冻结"
+  frozen: true
+
+  # Gate conditions (all must be satisfied)
+  conditions:
+    # 1. Core basket 5d return is negative
+    core_basket_ret_5d_negative: true
+
+    # 2. Core basket 5d return <= -5% OR <= rolling 3y 10th percentile
+    ret_5d_threshold_pct: -5.0
+    ret_5d_quantile_window_days: 750   # ~3 years of trading days
+    ret_5d_quantile_threshold_pct: 10  # 10th percentile
+
+    # 3. Core basket down stock ratio >= 50%
+    down_stock_ratio_5d_threshold_pct: 50.0
+
+  # Gate is evaluated at t close; all trading decisions start at t+1
+  execution_lag: 1
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Panic Scoring (only computed when panic_gate is triggered)
+# ═══════════════════════════════════════════════════════════════════════════
+panic_score:
+  description: "每类只保留一个主指标，避免高度相关变量重复计分"
+  frozen: true
+
+  severity:
+    description: "5日跌幅 <= -8%，或进入滚动3年最差5%"
+    ret_5d_threshold_pct: -8.0
+    quantile_window_days: 750
+    quantile_threshold_pct: 5
+
+  breadth:
+    description: "下跌股票占比 >= 70%"
+    down_stock_ratio_threshold_pct: 70.0
+
+  volume:
+    description: "成分股 amount_ratio_20d 中位数 >= 1.2"
+    amount_ratio_20d_median_threshold: 1.2
+
+  relative:
+    description: "core_basket 相对半导体指数5日超额 <= -3%"
+    excess_vs_semiconductor_5d_threshold_pct: -3.0
+
+  stress:
+    description: "单日跌幅超过7%的股票占比 >= 25%"
+    large_drop_ratio_threshold_pct: 25.0
+    large_drop_definition_pct: -7.0
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Event Intensity Classification
+# ═══════════════════════════════════════════════════════════════════════════
+event_intensity:
+  normal_panic:
+    min_score: 2
+    description: "panic_gate 成立 + score >= 2"
+
+  strong_panic:
+    min_score: 3
+    description: "panic_gate 成立 + score >= 3"
+
+  extreme_panic:
+    min_score: 4
+    description: "panic_gate 成立 + score >= 4"
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Event Environment Classification
+# ═══════════════════════════════════════════════════════════════════════════
+event_environment:
+  semiconductor_systematic_panic:
+    description: "半导体指数同步大跌，光刻胶跟跌"
+    condition:
+      semiconductor_index_ret_5d_max_pct: -3.0
+
+  photoresist_specific_panic:
+    description: "半导体指数未明显恐慌，但光刻胶显著跑输"
+    condition:
+      semiconductor_index_ret_5d_min_pct: -3.0
+      core_excess_vs_semiconductor_5d_max_pct: -3.0
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Top1 Single-Stock Rules (4 parallel strategies)
+# ═══════════════════════════════════════════════════════════════════════════
+top1_rules:
+  description: "四类 top1 并行测试，不能根据结果反向调整事件定义"
+  frozen: true
+
+  # ── top1_strength ────────────────────────────────────────────────────
+  top1_strength:
+    description: "事件后在 core 池中选择相对 core_basket 最强、流动性合格的一只"
+    selection:
+      metric: "relative_strength_vs_basket"  # stock_ret - basket_ret during event window
+      direction: "highest"
+    eligibility:
+      min_daily_amount_20d: 1.0e8
+      exclude_limit_down_event: true
+      exclude_suspend: true
+      exclude_st: true
+
+  # ── top1_mid_drop ────────────────────────────────────────────────────
+  top1_mid_drop:
+    description: "选择跌幅居中、未跌停、未流动性失控的一只"
+    selection:
+      metric: "mid_drop_rank"  # closest to median drop magnitude
+      direction: "closest_to_median"
+    eligibility:
+      min_daily_amount_20d: 1.0e8
+      exclude_limit_down_event: true
+      exclude_consecutive_limit_down: true
+      exclude_suspend: true
+      exclude_st: true
+      max_drop_rank_extreme_pct: 20  # exclude top/bottom 20% most extreme
+
+  # ── top1_liquidity_core ──────────────────────────────────────────────
+  top1_liquidity_core:
+    description: "选择 core 池中20日成交额最高且满足事件下跌条件的一只"
+    selection:
+      metric: "amount_20d"
+      direction: "highest"
+    eligibility:
+      exclude_limit_down_event: true
+      exclude_suspend: true
+      exclude_st: true
+      must_be_event_stock: true  # must satisfy event drop condition
+
+  # ── top1_residual_bucket ─────────────────────────────────────────────
+  top1_residual_bucket:
+    enabled: false
+    status: not_implemented
+    description: "在 residual 分桶中测试不同 residual 程度的表现"
+    selection:
+      metric: "liquidity_rank_within_bucket"
+      direction: "highest"
+    buckets:
+      mild_residual:
+        description: "轻度residual"
+      medium_residual:
+        description: "中度residual"
+      severe_residual:
+        description: "重度residual — 默认先作为风险变量"
+        default_exclude: true
+      limit_or_liquidity_stress_residual:
+        description: "涨跌停/流动性压力 — 完全排除"
+        always_exclude: true
+    eligibility:
+      exclude_limit_down_event: true
+      exclude_suspend: true
+      exclude_st: true
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Stock Residual Bucketing
+# ═══════════════════════════════════════════════════════════════════════════
+residual_buckets:
+  description: "stock_residual = stock_ret_5d - core_basket_ret_5d"
+  definitions:
+    mild_residual:
+      condition: "abs(residual) < 0.5 * cross_sectional_std"
+    medium_residual:
+      condition: "0.5 * cross_sectional_std <= abs(residual) < 1.0 * cross_sectional_std"
+    severe_residual:
+      condition: "abs(residual) >= 1.0 * cross_sectional_std"
+      default_exclude: true
+      can_include_if:
+        - "no_limit_down_on_event_day"
+        - "no_liquidity_dry_up"
+        - "no_structured_adverse_announcement"
+    limit_or_liquidity_stress_residual:
+      condition: "limit_down OR liquidity_ratio < 0.1 OR consecutive_limit_down"
+      always_exclude: true
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Trading Execution
+# ═══════════════════════════════════════════════════════════════════════════
+execution:
+  lag: 1  # all trades at t+1 earliest
+
+  entry_modes:
+    direct_entry:
+      description: "事件后 t+1 直接入场"
+      timing: "event_date_t + 1"
+
+    confirmation_entry:
+      enabled: false
+      status: not_implemented
+      description: "事件后5日内首次确认条件满足，则下一交易日入场"
+      max_wait_days: 5
+      confirmation_conditions:
+        - "core_basket 当日上涨 (return > 0)"
+        - "上涨股票占比 >= 50%"
+        - "候选股跑赢 core_basket"
+      entry_timing: "confirmation_date_s + 1"
+
+  exit_rules:
+    primary:
+      fixed_hold_5d:
+        hold_days: 5
+      fixed_hold_10d:
+        hold_days: 10
+      fixed_hold_20d:
+        hold_days: 20
+    auxiliary:
+      take_profit_8pct:
+        threshold: 0.08
+      take_profit_12pct:
+        threshold: 0.12
+      stop_loss_5pct:
+        threshold: -0.05
+      stop_loss_event_low:
+        description: "跌破事件低点"
+        reference: "event_day_low_price"
+
+  trading_constraints:
+    limit_up_no_buy: true        # 涨停买不到
+    limit_down_no_sell: true     # 跌停卖不出
+    suspend_no_trade: true       # 停牌不可交易
+    gap_slippage: true           # 开盘跳空滑点
+    gap_slippage_method: "open_vs_prev_close"
+
+  cost_sensitivity:
+    scenarios_bps: [20, 50, 100]
+    primary_cost_bps: 20
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Robustness Gates (2-3 auxiliary gates, ALL must be reported)
+# ═══════════════════════════════════════════════════════════════════════════
+robustness_gates:
+  enabled: false
+  status: not_implemented
+  description: "辅助 gate 只保留 2-3 套，必须报告所有结果，不允许只挑表现最好的"
+
+  aux_gate_1:
+    name: "relaxed_panic"
+    description: "放宽 gate: 5日跌幅 <= -3% (vs primary -5%)"
+    override:
+      panic_gate.conditions.ret_5d_threshold_pct: -3.0
+
+  aux_gate_2:
+    name: "strict_panic"
+    description: "收紧 gate: 5日跌幅 <= -8% (vs primary -5%)"
+    override:
+      panic_gate.conditions.ret_5d_threshold_pct: -8.0
+
+  aux_gate_3:
+    name: "breadth_only"
+    description: "仅使用 breadth + relative 条件"
+    override:
+      panic_gate.conditions.ret_5d_threshold_pct: null  # disable
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Threshold Validation (independent from the frozen primary pipeline)
+# ═══════════════════════════════════════════════════════════════════════════
+threshold_validation:
+  enabled: true
+  status: implemented
+  frozen: true
+  primary_gate_id: primary_5d
+  report_all_gates: true
+  random_seed: 20260710
+
+  sample_split:
+    train_observation: [20170101, 20211231]
+    validation: [20220101, 20231231]
+    out_of_sample: [20240101, 20261231]
+
+  gates:
+    relaxed_5d:
+      return_window_days: 5
+      absolute_threshold_pct: -3.0
+      quantile_window_days: 250
+      quantile_threshold_pct: 10.0
+      breadth_window_days: 5
+      breadth_threshold_pct: 50.0
+
+    primary_5d:
+      return_window_days: 5
+      absolute_threshold_pct: -5.0
+      quantile_window_days: 250
+      quantile_threshold_pct: 10.0
+      breadth_window_days: 5
+      breadth_threshold_pct: 50.0
+
+    primary_5d_q500:
+      return_window_days: 5
+      absolute_threshold_pct: -5.0
+      quantile_window_days: 500
+      quantile_threshold_pct: 10.0
+      breadth_window_days: 5
+      breadth_threshold_pct: 50.0
+
+    strict_5d:
+      return_window_days: 5
+      absolute_threshold_pct: -8.0
+      quantile_window_days: 500
+      quantile_threshold_pct: 5.0
+      breadth_window_days: 5
+      breadth_threshold_pct: 50.0
+
+    strict_10d:
+      return_window_days: 10
+      absolute_threshold_pct: -10.0
+      quantile_window_days: 500
+      quantile_threshold_pct: 5.0
+      breadth_window_days: 5
+      breadth_threshold_pct: 50.0
+
+  event_clustering:
+    max_gap_trading_days: 5
+
+  market_regime:
+    primary_index: "000300.SH"
+    comparison_indices: ["399006.SZ", "931865.CSI"]
+    ma_window_days: 120
+    return_window_days: 60
+
+  volume_groups:
+    panic_high_ratio: 1.2
+    repair_high_ratio: 1.0
+    repair_search_days: 5
+
+  significance_tests:
+    placebo:
+      n_runs: 1000
+      match_by_year: true
+      match_by_market_regime: true
+    bootstrap:
+      n_runs: 1000
+      confidence_level: 0.90
+
+  acceptance:
+    min_event_clusters: 5
+    min_win_rate_20d: 0.50
+    max_placebo_p_value: 0.10
+    min_placebo_match_coverage: 0.80
+    require_bootstrap_ci_low_positive: true
+    min_non_negative_regimes: 2
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Go / No-Go Criteria
+# ═══════════════════════════════════════════════════════════════════════════
+go_nogo:
+  event_GO:
+    description: "Basket 层面验证"
+    criteria:
+      - "basket 成本前后均显示修复倾向"
+      - "年份稳定性过半（>= 50% 年份正向）"
+      - "leave-one-stock-out 后不完全失效"
+      - "事件簇数量 >= 5"
+
+  top1_GO:
+    description: "Top1 单票层面验证"
+    criteria:
+      - "至少一套预设 top1 规则成本后为正"
+      - "不是单一股票贡献（top1_contributor_share < 50%）"
+      - "涨跌停和停牌处理后结论不反转"
+
+  trade_GO:
+    description: "最终交易层面验证"
+    criteria:
+      - "event_GO 和 top1_GO 同时成立"
+      - "参数轻微变化不反转（robustness gates 方向一致）"
+      - "样本不是集中在单一年份或单一 regime"
+      - "至少 2/3 辅助 gate 方向一致"
+
+  failure_classification:
+    basket_valid_top1_invalid:
+      verdict: "主题事件存在，但单票账户暂不可交易"
+      action: "跟踪篮子信号，等市场结构改善后再评估"
+    basket_invalid_top1_valid:
+      verdict: "高度怀疑单票偶然或过拟合"
+      action: "No-Go"
+    both_invalid:
+      verdict: "No-Go"
+      action: "放弃当前规则配置"
+    both_valid:
+      verdict: "进入候选策略池"
+      action: "进入下一步策略组合评估"
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Output Specification
+# ═══════════════════════════════════════════════════════════════════════════
+outputs:
+  directory: "outputs/analysis/photoresist_panic"
+  files:
+    - photoresist_universe_snapshot.csv
+    - photoresist_basket_daily.csv
+    - photoresist_panic_events.csv
+    - photoresist_forward_returns.csv
+    - photoresist_top1_trades.csv
+    - photoresist_contribution_diagnostics.csv
+    - photoresist_leave_one_out.csv
+    - photoresist_robustness.csv
+    - photoresist_panic_report.md
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Development Phases (tracking reference)
+# ═══════════════════════════════════════════════════════════════════════════
+phases:
+  phase_1: { status: "in_progress", description: "数据盘点和 PIT 股票池配置" }
+  phase_2: { status: "pending", description: "构建 core / broad basket 日度序列" }
+  phase_3: { status: "pending", description: "生成 panic_gate 和 panic_score 事件表" }
+  phase_4: { status: "pending", description: "计算 basket forward return 和事件分组" }
+  phase_5: { status: "pending", description: "实现 top1 规则和交易执行约束" }
+  phase_6: { status: "pending", description: "输出集中度、leave-one-out、成本敏感性" }
+  phase_7: { status: "pending", description: "生成 markdown 报告" }
+  phase_8: { status: "pending", description: "补充测试，冻结主 gate 和辅助 gate 结果" }

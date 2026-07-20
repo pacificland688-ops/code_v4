@@ -1,0 +1,72 @@
+generated_at: '2026-06-17T12:52:56.425963'
+strategy_version: v1_simple_composite
+gate_source: outputs/analysis/three_state_gate/factor_three_state_gate.csv
+eligible_factors:
+- low_volatility_60d_cs
+- amihud_illiq_20d_cs
+- amount_concentration_20d_cs
+- bollinger_position_20d_cs
+- roe_stability_8q_cs
+- volume_shock_5d_cs
+- intraday_reversal_cs
+factor_families:
+- volatility
+- liquidity
+- technical
+- quality
+- reversal
+composite_config:
+  method: equal_weight_zscore
+  neutralization:
+  - industry
+  - log_market_cap
+  neutralization_method: ols_residual
+  min_stocks_per_date: 30
+portfolio_config:
+  top_n: 30
+  rebalance_freq: monthly
+  weighting: equal
+  cost_bps_per_side: 10
+performance_2021_2024:
+  ann_return_pct: 13.82
+  ann_benchmark_pct: 10.29
+  ann_excess_pct: 3.52
+  sharpe_ratio: 0.66
+  information_ratio: 0.35
+  max_drawdown_pct: -16.25
+  win_rate_pct: 53.2
+  annual_returns:
+    2021:
+      portfolio: -16.79
+      benchmark: -7.21
+      excess: -9.58
+    2022:
+      portfolio: 13.64
+      benchmark: 0.64
+      excess: 13.0
+    2023:
+      portfolio: -3.26
+      benchmark: -6.78
+      excess: 3.52
+    2024:
+      portfolio: 81.48
+      benchmark: 68.62
+      excess: 12.87
+gate_check:
+  eligible_factors_ge_3: true
+  families_ge_2: true
+  positive_excess_years: 3/4
+  worst_year_excess_gt_minus10pct: true
+  ir_gt_0_30: true
+  status: PASS_ALPHA
+warnings:
+- 2021 was a down year for both strategy and benchmark
+- Limited to 4005 stocks due to roe_stability_8q coverage
+- Monthly rebalance required to manage costs
+- Top-30 is concentrated; larger N dilutes alpha
+next_steps:
+- Add growth_stability_8q_cs back when income coverage improves
+- Test top-50 and top-100 for capacity assessment
+- Implement IC-weighted composite (currently equal-weight)
+- Add sector-neutral constraint for cleaner alpha
+- Build sleeve structure for regime-adaptive allocation

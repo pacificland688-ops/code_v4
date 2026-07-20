@@ -1,0 +1,137 @@
+# ===========================================================================
+# Regime Candidate V4 R1 — With Growth Sleeve
+# ===========================================================================
+enabled: true
+
+regime_detector:
+  index_code: "000300.SH"
+  trend:
+    ma_short: 60
+    ma_long: 120
+    return_windows: [20, 60, 120]
+  volatility:
+    vol_windows: [20, 60]
+    drawdown_window: 60
+  breadth:
+    ma_window: 60
+    min_stocks: 100
+  smoothing:
+    halflife: 4
+
+strategy_sleeves:
+  value:
+    factors:
+      - ep_cs
+      - bp_cs
+      - sp_cs
+      - industry_relative_ep_cs
+      - industry_relative_bp_cs
+
+  growth:
+    factors:
+      - revenue_growth_ttm_cs
+      - profit_growth_ttm_cs
+      - earnings_acceleration_cs
+      - growth_stability_8q_cs
+
+  momentum:
+    factors:
+      - momentum_60_skip5_cs
+      - momentum_120_skip20_cs
+      - risk_adjusted_momentum_60_cs
+      - volume_confirmed_momentum_cs
+      - trend_quality_cs
+      - industry_relative_momentum_60_cs
+      - pv_divergence_20_cs
+
+  defensive:
+    factors:
+      - volatility_60_cs
+      - log_market_cap_cs
+      - ep_cs
+      - bp_cs
+      - industry_relative_ep_cs
+
+  reversal:
+    factors:
+      - reversal_5_cs
+      - pv_divergence_20_cs
+
+  volume_price:
+    factors:
+      - pv_divergence_20_cs
+      - volume_confirmed_momentum_cs
+      - trend_quality_cs
+      - industry_relative_momentum_60_cs
+
+sleeve_composite:
+  ic_window_months: 12
+  shrinkage: 0.3
+  weight_cap: 0.50
+  min_ic_obs: 20
+  min_icir: 0.0
+  hard_cap: false
+  min_active_factors: 1
+  coverage_gate_enabled: false
+  sign_stability_check: true
+  horizon: 5
+
+sleeve_performance_overlay:
+  enabled: false
+
+allocator:
+  min_sleeves: 2
+  sleeve_weight_cap: 0.50
+  sleeve_weight_floor: 0.05
+  max_weekly_weight_change: 0.15
+  regime_to_sleeve_weights:
+    trend_up:
+      momentum: 0.35
+      growth: 0.30
+      value: 0.15
+      volume_price: 0.10
+      defensive: 0.05
+      reversal: 0.05
+    trend_down:
+      defensive: 0.35
+      value: 0.25
+      growth: 0.15
+      reversal: 0.10
+      volume_price: 0.10
+      momentum: 0.05
+    range_bound:
+      reversal: 0.25
+      value: 0.25
+      volume_price: 0.20
+      defensive: 0.15
+      momentum: 0.10
+      growth: 0.05
+    high_volatility:
+      defensive: 0.45
+      value: 0.25
+      reversal: 0.15
+      volume_price: 0.10
+      momentum: 0.05
+      growth: 0.00
+    value_rotation:
+      value: 0.40
+      defensive: 0.20
+      growth: 0.15
+      reversal: 0.10
+      momentum: 0.10
+      volume_price: 0.05
+
+factor_alignment:
+  technical_max_stale_trading_days: 5
+  fundamental_max_stale_trading_days: 63
+  fundamental_factors:
+    - ep_cs
+    - bp_cs
+    - sp_cs
+    - log_market_cap_cs
+    - revenue_growth_ttm_cs
+    - profit_growth_ttm_cs
+    - earnings_acceleration_cs
+    - growth_stability_8q_cs
+    - industry_relative_ep_cs
+    - industry_relative_bp_cs
