@@ -504,18 +504,28 @@ def _is_at_limit(
     limit_status: pd.DataFrame | None,
     prices: pd.DataFrame | None = None,
     tick_tolerance: float = 0.005,
+    limit_lookup: dict | None = None,
 ) -> tuple[bool, str]:
     """Check if a stock hit limit up/down using best available data.
 
     Resolution order:
-    1. Real limit price (up_limit / down_limit column) compared to close.
-    2. Boolean flag column.
-    3. pct_chg proxy (broad-market thresholds, inaccurate for ChiNext/STAR).
+    1. Pre-computed limit_lookup dict (fastest).
+    2. Real limit price (up_limit / down_limit column) compared to close.
+    3. Boolean flag column.
+    4. pct_chg proxy (broad-market thresholds, inaccurate for ChiNext/STAR).
 
     Returns (is_limit: bool, source: str).
-    source ∈ {"price", "flag", "pct_chg_proxy", "unavailable"}.
+    source ∈ {"lookup", "price", "flag", "pct_chg_proxy", "unavailable"}.
     """
     side = side.lower()
+
+    # ── Priority 0: pre-computed lookup (O(1) per call) ──
+    if limit_lookup is not None:
+        key = (str(ts_code), int(trade_date))
+        if key in limit_lookup:
+            is_up, is_dn = limit_lookup[key]
+            return (is_up if side == "up" else is_dn), "lookup"
+
     side_col = f"{side}_limit"
 
     # ── Priority 1: real limit price comparison ──
@@ -579,6 +589,49 @@ def _is_at_limit(
                     return pct <= threshold, "pct_chg_proxy"
 
     return False, "unavailable"
+
+
+def _build_limit_lookup(
+    limit_status: pd.DataFrame | None,
+    prices: pd.DataFrame | None,
+) -> dict[tuple, tuple[bool, bool]]:
+    """Pre-compute (is_limit_up, is_limit_down) for every (ts_code, trade_date).
+
+    Returns a dict keyed by (ts_code, trade_date) → (is_up: bool, is_down: bool).
+    Uses real price comparison when up_limit/down_limit columns exist.
+    """
+    lookup: dict[tuple, tuple[bool, bool]] = {}
+    if limit_status is None or limit_status.empty or prices is None:
+        return lookup
+
+    if "up_limit" not in limit_status.columns or "down_limit" not in limit_status.columns:
+        return lookup
+
+    merged = limit_status[["ts_code", "trade_date", "up_limit", "down_limit"]].merge(
+        prices[["ts_code", "trade_date", "close"]],
+        on=["ts_code", "trade_date"], how="inner",
+    )
+    if merged.empty:
+        return lookup
+
+    merged["up_limit"] = pd.to_numeric(merged["up_limit"], errors="coerce")
+    merged["down_limit"] = pd.to_numeric(merged["down_limit"], errors="coerce")
+    merged["close"] = pd.to_numeric(merged["close"], errors="coerce")
+
+    for _, row in merged.iterrows():
+        code = str(row["ts_code"])
+        td = int(row["trade_date"])
+        close = row["close"]
+        up = row["up_limit"]
+        dn = row["down_limit"]
+        if pd.isna(close) or pd.isna(up) or pd.isna(dn):
+            continue
+        tick = 0.001 if code.startswith(("300", "688")) else 0.01
+        is_up = abs(close - up) <= tick + 0.005
+        is_dn = abs(close - dn) <= tick + 0.005
+        lookup[(code, td)] = (is_up, is_dn)
+
+    return lookup
 
 
 def check_consecutive_limit_down(
@@ -734,6 +787,7 @@ def filter_eligible_stocks(
     suspend_status: pd.DataFrame | None = None,
     stock_status: pd.DataFrame | None = None,
     namechange: pd.DataFrame | None = None,
+    limit_lookup: dict | None = None,
     exec_date: int | None = None,
     exec_prices: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
@@ -801,6 +855,7 @@ def filter_eligible_stocks(
         if exclude_ld_event:
             is_ld, ld_src = _is_at_limit(
                 code, int(trade_date), "down", limit_status, prices,
+                limit_lookup=limit_lookup,
             )
             if is_ld:
                 continue
@@ -813,6 +868,7 @@ def filter_eligible_stocks(
         if exclude_limit_up_entry and exec_date is not None:
             is_lu, lu_src = _is_at_limit(
                 code, int(exec_date), "up", limit_status, prices,
+                limit_lookup=limit_lookup,
             )
             if is_lu:
                 continue
@@ -855,6 +911,10 @@ def build_basket_daily(
     listing_age_map = compute_listing_age(prices, calendar)
     amt_20d_map = compute_amount_20d_avg(prices)
     amount_ratio_map = compute_amount_ratio_20d(prices)
+    # Pre-compute limit lookup for O(1) per-stock-per-day queries
+    limit_lookup = _build_limit_lookup(limit_status, prices)
+    if limit_lookup:
+        print(f"  limit_lookup: {len(limit_lookup)} (ts_code, trade_date) entries")
 
     results = {}
     diagnostics = []
@@ -903,6 +963,7 @@ def build_basket_daily(
                 limit_status=limit_status,
                 suspend_status=suspend_status,
                 stock_status=stock_status,
+                limit_lookup=limit_lookup,
             )
             eligible_codes = day_prices["ts_code"].tolist()
 
@@ -947,12 +1008,14 @@ def build_basket_daily(
             down_ratio = float(np.mean(rets < 0))
             large_drop_ratio = float(np.mean(rets < -0.07))
 
-            # Limit up/down ratio — use _is_at_limit (prefers real price data)
+            # Limit up/down ratio — use pre-computed lookup for speed
             lu_count = 0
             ld_count = 0
             for code in eligible_codes:
-                is_lu, _ = _is_at_limit(code, int(td), "up", limit_status, prices)
-                is_ld, _ = _is_at_limit(code, int(td), "down", limit_status, prices)
+                is_lu, _ = _is_at_limit(code, int(td), "up", limit_status, prices,
+                                        limit_lookup=limit_lookup)
+                is_ld, _ = _is_at_limit(code, int(td), "down", limit_status, prices,
+                                        limit_lookup=limit_lookup)
                 if is_lu:
                     lu_count += 1
                 if is_ld:
