@@ -2,6 +2,7 @@
 
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import numpy as np
@@ -132,3 +133,185 @@ class TestCacheCoverage:
         assert not cache.covers_range(table_name, "20160101", "20160131", "cal_date"), (
             "Cache with 2024 dates should NOT claim to cover 2016 range!"
         )
+
+
+class TestFetchManifest:
+    """Coverage is based on completed queries, including sparse empty results."""
+
+    def test_records_requested_codes_not_only_returned_codes(self, tmp_path):
+        from data.tushare_client import FetchManifest
+
+        manifest = FetchManifest(str(tmp_path))
+        requested = ["000001.SZ", "000002.SZ"]
+        manifest.record_fetch(
+            "suspend_status", 20240101, 20240131, codes=requested
+        )
+        assert manifest.has_coverage(
+            "suspend_status", 20240110, 20240120, requested
+        )
+
+    def test_adjacent_year_queries_cover_combined_range(self, tmp_path):
+        from data.tushare_client import FetchManifest
+
+        manifest = FetchManifest(str(tmp_path))
+        codes = ["000001.SZ"]
+        manifest.record_fetch("limit_status", 20230101, 20231231, codes)
+        manifest.record_fetch("limit_status", 20240101, 20241231, codes)
+        assert manifest.has_coverage(
+            "limit_status", 20230101, 20241231, codes
+        )
+
+    def test_different_code_query_does_not_prove_coverage(self, tmp_path):
+        from data.tushare_client import FetchManifest
+
+        manifest = FetchManifest(str(tmp_path))
+        manifest.record_fetch(
+            "daily_basic", 20240101, 20240131, ["000001.SZ"]
+        )
+        assert not manifest.has_coverage(
+            "daily_basic", 20240101, 20240131, ["000002.SZ"]
+        )
+
+
+class TestTushareCoverageContracts:
+    @staticmethod
+    def _client(tmp_path):
+        from data.tushare_client import TushareClient
+
+        client = TushareClient(cache_path=str(tmp_path))
+        client.available = True
+        return client
+
+    def test_suspend_uses_official_range_parameters_and_records_empty(self, tmp_path):
+        client = self._client(tmp_path)
+        calls = []
+        client.pro = SimpleNamespace(suspend_d=lambda **kwargs: pd.DataFrame())
+
+        def fake_call(func, **kwargs):
+            calls.append(kwargs)
+            return pd.DataFrame()
+
+        client._call_api = fake_call
+        result = client.get_suspend(
+            ts_code=["000001.SZ", "000002.SZ"],
+            start_date="20240101",
+            end_date="20240131",
+            use_cache=False,
+        )
+        assert result.empty
+        assert calls == [{
+            "suspend_type": "S",
+            "start_date": "20240101",
+            "end_date": "20240131",
+            "ts_code": "000001.SZ,000002.SZ",
+        }]
+        assert client.manifest.has_coverage(
+            "suspend_status", 20240101, 20240131,
+            ["000001.SZ", "000002.SZ"],
+        )
+
+    def test_daily_basic_list_is_queried_one_code_at_a_time(self, tmp_path):
+        client = self._client(tmp_path)
+        calls = []
+        client.pro = SimpleNamespace(daily_basic=lambda **kwargs: pd.DataFrame())
+
+        def fake_call(func, **kwargs):
+            calls.append(kwargs.copy())
+            code = kwargs["ts_code"]
+            return pd.DataFrame({
+                "ts_code": [code],
+                "trade_date": [20240102],
+                "turnover_rate_f": [1.0],
+            })
+
+        client._call_api = fake_call
+        result = client.get_daily_basic(
+            ts_code=["000001.SZ", "000002.SZ"],
+            start_date="20240101",
+            end_date="20240131",
+            use_cache=False,
+        )
+        assert {call["ts_code"] for call in calls} == {
+            "000001.SZ", "000002.SZ"
+        }
+        assert set(result["ts_code"]) == {"000001.SZ", "000002.SZ"}
+        assert client.manifest.has_coverage(
+            "daily_basic", 20240101, 20240131,
+            ["000001.SZ", "000002.SZ"],
+        )
+
+    def test_daily_basic_partial_failure_is_not_manifest_complete(self, tmp_path):
+        client = self._client(tmp_path)
+        client.pro = SimpleNamespace(daily_basic=lambda **kwargs: pd.DataFrame())
+
+        def fake_call(func, **kwargs):
+            if kwargs["ts_code"] == "000002.SZ":
+                raise RuntimeError("simulated API failure")
+            return pd.DataFrame({
+                "ts_code": [kwargs["ts_code"]],
+                "trade_date": [20240102],
+                "turnover_rate_f": [1.0],
+            })
+
+        client._call_api = fake_call
+        with pytest.raises(RuntimeError, match="fetch incomplete"):
+            client.get_daily_basic(
+                ts_code=["000001.SZ", "000002.SZ"],
+                start_date="20240101",
+                end_date="20240131",
+                use_cache=False,
+            )
+        assert not client.manifest.has_coverage(
+            "daily_basic", 20240101, 20240131,
+            ["000001.SZ", "000002.SZ"],
+        )
+
+    def test_stk_limit_list_is_queried_one_code_at_a_time(self, tmp_path):
+        client = self._client(tmp_path)
+        calls = []
+        client.pro = SimpleNamespace(stk_limit=lambda **kwargs: pd.DataFrame())
+
+        def fake_call(func, **kwargs):
+            calls.append(kwargs.copy())
+            return pd.DataFrame({
+                "ts_code": [kwargs["ts_code"]],
+                "trade_date": [20240102],
+                "up_limit": [11.0],
+                "down_limit": [9.0],
+            })
+
+        client._call_api = fake_call
+        result = client.get_stk_limit(
+            ts_code=["000001.SZ", "000002.SZ"],
+            start_date="20240101",
+            end_date="20240131",
+            use_cache=False,
+        )
+        assert {call["ts_code"] for call in calls} == {
+            "000001.SZ", "000002.SZ"
+        }
+        assert set(result["ts_code"]) == {"000001.SZ", "000002.SZ"}
+        assert client.manifest.has_coverage(
+            "limit_status", 20240101, 20240131,
+            ["000001.SZ", "000002.SZ"],
+        )
+
+    def test_suspend_loader_normalizes_suspend_date(self, tmp_path, monkeypatch):
+        from scripts import build_photoresist_panic_events as builder
+
+        suspend_root = tmp_path / "suspend_status"
+        partition = suspend_root / "year=2024" / "month=1"
+        partition.mkdir(parents=True)
+        pd.DataFrame({
+            "ts_code": ["000001.SZ"],
+            "suspend_date": [20240102],
+            "suspend_type": ["S"],
+        }).to_parquet(partition / "part.parquet", index=False)
+        monkeypatch.setattr(builder, "SUSPEND_DIR", suspend_root)
+
+        loaded = builder.load_suspend_status(
+            20240101, 20240131, ["000001.SZ"]
+        )
+        assert "trade_date" in loaded.columns
+        assert "suspend_date" not in loaded.columns
+        assert int(loaded.iloc[0]["trade_date"]) == 20240102

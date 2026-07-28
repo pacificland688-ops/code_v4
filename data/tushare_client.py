@@ -9,6 +9,7 @@ Uses hive-partitioned parquet as local cache with predicate-pushdown reads.
 
 import os
 import time
+import json
 import logging
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -99,6 +100,126 @@ def with_retry(max_retries: int = 5, base_seconds: float = 1.0,
 
 from data.parquet_cache import ParquetCache  # noqa: E402
 
+
+# ---------------------------------------------------------------------------
+# Fetch manifest — authoritative coverage metadata, NOT inferred from data
+# ---------------------------------------------------------------------------
+class FetchManifest:
+    """Tracks which (table, date_range, codes) have been successfully fetched.
+
+    Business records (parquet files) cannot prove coverage completeness:
+    - Sparse tables (suspend_status) have gaps by nature
+    - Partial fetches leave date × code holes invisible to min/max checks
+
+    This manifest is the single source of truth for cache coverage.
+    It is stored as a JSON file alongside the parquet cache directory.
+    """
+
+    def __init__(self, cache_path: str):
+        self._path = Path(cache_path) / "_fetch_manifest.json"
+        self._data: dict[str, dict] = {}
+        self._load()
+
+    def _load(self):
+        if self._path.exists():
+            try:
+                self._data = json.loads(self._path.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                self._data = {}
+
+    def _save(self):
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        self._path.write_text(
+            json.dumps(self._data, indent=2, ensure_ascii=False, default=str),
+            encoding="utf-8",
+        )
+
+    def record_fetch(self, table: str, start_date: int, end_date: int,
+                     codes: list[str] | None = None):
+        """Record one fully successful API query.
+
+        ``codes`` are the codes that were *requested*, not merely the codes
+        returned by a sparse API.  This lets an empty suspend/namechange
+        response prove the negative result without confusing it with a query
+        that was never made.
+        """
+        entry = self._data.setdefault(table, {
+            "queries": [],
+            "last_fetch": None,
+        })
+        fetched_at = datetime.now().isoformat()
+        entry.setdefault("queries", []).append({
+            "start_date": int(start_date),
+            "end_date": int(end_date),
+            "codes": sorted({str(c) for c in codes}) if codes else None,
+            "fetched_at": fetched_at,
+        })
+        entry["last_fetch"] = fetched_at
+        self._save()
+
+    def has_coverage(self, table: str, start_date: int, end_date: int,
+                     codes: list[str] | None = None) -> bool:
+        """Check whether the manifest proves full coverage for this query."""
+        if table not in self._data:
+            return False
+        def _ordinal(value: int) -> int:
+            value = int(value)
+            if value <= 0:
+                return 0
+            if value >= 99990000:
+                return datetime.max.date().toordinal()
+            return datetime.strptime(str(value), "%Y%m%d").date().toordinal()
+
+        requested_codes = {str(c) for c in codes} if codes else None
+        intervals: list[tuple[int, int]] = []
+        for query in self._data[table].get("queries", []):
+            query_codes = query.get("codes")
+            if requested_codes is not None and query_codes is not None:
+                if not requested_codes.issubset({str(c) for c in query_codes}):
+                    continue
+            intervals.append((
+                _ordinal(int(query["start_date"])),
+                _ordinal(int(query["end_date"])),
+            ))
+        if not intervals:
+            return False
+
+        # Coverage may have been fetched in adjacent yearly/monthly chunks.
+        # Merge date intervals instead of requiring one oversized record.
+        cursor = _ordinal(int(start_date))
+        requested_end = _ordinal(int(end_date))
+        for left, right in sorted(intervals):
+            if right < cursor:
+                continue
+            if left > cursor:
+                return False
+            cursor = max(cursor, right + 1)
+            if cursor > requested_end:
+                return True
+        return cursor > requested_end
+
+    def get_coverage_summary(self, table: str) -> dict:
+        """Return human-readable coverage summary for a table."""
+        if table not in self._data:
+            return {"fetched": False, "ranges": [], "n_codes": 0}
+        e = self._data[table]
+        queries = e.get("queries", [])
+        codes = {
+            str(code)
+            for query in queries
+            for code in (query.get("codes") or [])
+        }
+        return {
+            "fetched": True,
+            "ranges": [
+                [int(q["start_date"]), int(q["end_date"])]
+                for q in queries
+            ],
+            "n_codes": len(codes),
+            "last_fetch": e.get("last_fetch"),
+        }
+
+
 # ---------------------------------------------------------------------------
 # Main Tushare client
 # ---------------------------------------------------------------------------
@@ -116,6 +237,7 @@ class TushareClient:
         self.pro = _PRO
         self.available = _PRO_AVAILABLE
         self.cache = ParquetCache(cache_path)
+        self.manifest = FetchManifest(cache_path)
         self.rate_limiter = RateLimiter(max_requests_per_minute)
         self._config = {
             "max_requests_per_minute": max_requests_per_minute,
@@ -687,10 +809,10 @@ class TushareClient:
         """
         Fetch daily basic data (PE, PB, total_mv, turnover_rate, etc.).
 
-        NOTE: Tushare daily_basic data is published at MONTH-END snapshots only.
-        This method checks which months are already cached and only fetches
-        missing months. Missing months are fetched one at a time, using the
-        trading calendar to find the nearest trade day to each month-end.
+        Tushare daily_basic is a DAILY indicator updated every trading day
+        (https://tushare.pro/document/2?doc_id=32).  For explicit stock codes
+        it queries each code over the full range (well below the 6000-row
+        limit); without codes it queries one trading day at a time.
         """
         table_name = "daily_basic"
 
@@ -710,87 +832,77 @@ class TushareClient:
                 result.drop(columns=["year", "month"], inplace=True, errors="ignore")
             return result if result is not None else pd.DataFrame()
 
-        # Date range mode — check coverage and fetch missing months
+        # Date range mode — iterate months, query full month via start_date/end_date
         if start_date and end_date:
-            # 1. Determine expected month-end dates and nearby trading days
-            try:
-                from data.calendar import get_calendar
-                cal = get_calendar()
-                cal.load(start_date=start_date, end_date=end_date)
-                has_cal = True
-            except Exception:
-                has_cal = False
-
-            expected_dates = []
-            current = pd.Timestamp(str(start_date))
-            end = pd.Timestamp(str(end_date))
-            while current <= end:
-                month_end = current + pd.offsets.MonthEnd(0)
-                if month_end > end:
-                    break
-                me_str = int(month_end.strftime("%Y%m%d"))
-                if has_cal:
-                    target = cal.prev_trade_day(me_str)
-                else:
-                    target = me_str
-                expected_dates.append((me_str, target))
-                current = month_end + pd.Timedelta(days=1)
-
-            # 2. Check cache for existing months
-            cached = pd.DataFrame()
-            if use_cache:
-                cached = self.cache.read(
-                    table_name,
-                    filters=self._date_filters(start_date, end_date)
-                )
+            # Check manifest for coverage
+            codes_list = ([ts_code] if isinstance(ts_code, str) else ts_code) if ts_code else None
+            if use_cache and self.manifest.has_coverage(
+                table_name, int(start_date), int(end_date), codes_list
+            ):
+                cached = self.cache.read(table_name, filters=[
+                    ("trade_date", ">=", np.int32(int(start_date))),
+                    ("trade_date", "<=", np.int32(int(end_date))),
+                ])
                 if not cached.empty:
-                    cached["trade_date"] = cached["trade_date"].astype("int32")
+                    return cached
 
-            cached_dates = set(cached["trade_date"].unique()) if not cached.empty else set()
-            missing_months = [
-                (me, tgt) for me, tgt in expected_dates
-                if tgt not in cached_dates
-            ]
-
-            if missing_months:
-                logger.info(
-                    f"daily_basic: {len(cached_dates)} months cached, "
-                    f"{len(missing_months)} missing — fetching..."
-                )
+            all_results = []
+            failed_chunks: list[str] = []
+            if codes_list:
+                query_specs = [
+                    (
+                        str(code),
+                        {"ts_code": str(code), "start_date": start_date, "end_date": end_date},
+                    )
+                    for code in codes_list
+                ]
             else:
-                logger.debug(f"daily_basic: all {len(expected_dates)} months cached")
+                calendar = self.get_trade_cal(
+                    start_date=start_date, end_date=end_date
+                )
+                trade_dates = sorted(calendar["cal_date"].astype(str).unique())
+                query_specs = [
+                    (date, {"trade_date": date}) for date in trade_dates
+                ]
 
-            # 3. Fetch missing months
-            new_chunks = []
-            for me_str, target_date in missing_months:
-                kwargs = {"trade_date": str(target_date)}
-                if ts_code:
-                    kwargs["ts_code"] = ts_code if isinstance(ts_code, str) else ",".join(ts_code)
+            for chunk_name, kwargs in query_specs:
                 if fields:
                     kwargs["fields"] = fields
                 try:
                     chunk = self._call_api(self.pro.daily_basic, **kwargs)
                     if chunk is not None and not chunk.empty:
                         chunk["trade_date"] = chunk["trade_date"].astype("int32")
-                        chunk["year"] = chunk["trade_date"] // 10000
-                        chunk["month"] = (chunk["trade_date"] % 10000) // 100
                         chunk = chunk.drop_duplicates(["ts_code", "trade_date"])
-                        self.cache.write(
-                            chunk, table_name,
-                            partition_cols=["year", "month"]
-                        )
-                        chunk.drop(columns=["year", "month"], inplace=True, errors="ignore")
-                        new_chunks.append(chunk)
+                        all_results.append(chunk)
                 except Exception as e:
-                    logger.warning(f"daily_basic {target_date}: {e}")
+                    logger.warning(f"daily_basic {chunk_name}: {e}")
+                    failed_chunks.append(chunk_name)
 
-            # 4. Combine
-            all_parts = [cached] if not cached.empty else []
-            all_parts.extend(new_chunks)
-            if all_parts:
-                result = pd.concat(all_parts, ignore_index=True)
-            else:
-                result = pd.DataFrame()
+            if not all_results:
+                if failed_chunks:
+                    raise RuntimeError(
+                        "daily_basic fetch incomplete; failed chunks: "
+                        + ", ".join(failed_chunks)
+                    )
+                return pd.DataFrame()
+            result = pd.concat(all_results, ignore_index=True)
+            if not result.empty:
+                result["year"] = result["trade_date"] // 10000
+                result["month"] = (result["trade_date"] % 10000) // 100
+                self.cache.write(result, table_name, partition_cols=["year", "month"])
+                result.drop(columns=["year", "month"], inplace=True, errors="ignore")
+            if failed_chunks:
+                # Successful chunks have already been cached, but the broad
+                # request must not be declared complete or reported as success.
+                raise RuntimeError(
+                    "daily_basic fetch incomplete; failed chunks: "
+                    + ", ".join(failed_chunks)
+                )
+            self.manifest.record_fetch(
+                table_name,
+                int(start_date), int(end_date),
+                codes=codes_list,
+            )
             return result
 
         # No date filter
@@ -975,20 +1087,39 @@ class TushareClient:
         Uses ann_date (announcement date) for date filtering, NOT trade_date.
         """
         table_name = "namechange"
+        codes_list = ([ts_code] if isinstance(ts_code, str) else ts_code) if ts_code else None
+        coverage_start = int(start_date) if start_date else 0
+        coverage_end = int(end_date) if end_date else 99991231
 
-        if use_cache:
+        if use_cache and self.manifest.has_coverage(
+            table_name, coverage_start, coverage_end, codes_list
+        ):
             # namechange table uses 'ann_date' not 'trade_date'
             nc_filters = self._date_code_filters(
                 start_date, end_date, ts_code, date_col="ann_date"
             )
             cached = self.cache.read(table_name, filters=nc_filters)
-            if not cached.empty:
-                return cached
+            return cached
 
-        kwargs = {}
-        if ts_code:
-            kwargs["ts_code"] = ts_code if isinstance(ts_code, str) else ",".join(ts_code)
-        result = self._call_api(self.pro.namechange, **kwargs)
+        if isinstance(ts_code, (list, tuple, set)):
+            chunks = []
+            for code in ts_code:
+                chunk = self._call_api(self.pro.namechange, ts_code=str(code))
+                if chunk is None:
+                    raise RuntimeError(
+                        f"namechange API returned no response for {code}"
+                    )
+                if not chunk.empty:
+                    chunks.append(chunk)
+            result = (
+                pd.concat(chunks, ignore_index=True)
+                if chunks else pd.DataFrame()
+            )
+        else:
+            kwargs = {"ts_code": ts_code} if ts_code else {}
+            result = self._call_api(self.pro.namechange, **kwargs)
+            if result is None:
+                raise RuntimeError("namechange API returned no response")
 
         if result is not None and not result.empty:
             # Handle nullable date columns safely
@@ -1008,7 +1139,11 @@ class TushareClient:
             self.cache.write(result, table_name, partition_cols=["year"])
             result.drop(columns=["year"], inplace=True, errors="ignore")
 
-        return result if result is not None else pd.DataFrame()
+        self.manifest.record_fetch(
+            table_name, coverage_start, coverage_end, codes=codes_list
+        )
+
+        return result
 
     # ------------------------------------------------------------------
     # Suspend (停牌)
@@ -1019,107 +1154,88 @@ class TushareClient:
                     start_date: Optional[str] = None,
                     end_date: Optional[str] = None,
                     use_cache: bool = True) -> pd.DataFrame:
-        """
-        Fetch suspend/resume records.
+        """Fetch suspension records using the current ``suspend_d`` contract.
 
-        Tushare suspend_d API supports suspend_date as a single date filter.
-        To cover a date range, we iterate over months of suspend_date.
-        All records are post-filtered to match the requested range.
+        The API uses ``trade_date`` for a single day and supports
+        ``start_date``/``end_date`` directly.  ``suspend_date`` is retained as
+        a backwards-compatible caller argument and mapped to ``trade_date``.
         """
         table_name = "suspend_status"
+        codes_list = ([ts_code] if isinstance(ts_code, str) else ts_code) if ts_code else None
+        coverage_start = int(suspend_date or start_date) if (suspend_date or start_date) else None
+        coverage_end = int(suspend_date or end_date) if (suspend_date or end_date) else None
 
-        if use_cache:
+        if (
+            use_cache
+            and coverage_start is not None
+            and coverage_end is not None
+            and self.manifest.has_coverage(
+                table_name, coverage_start, coverage_end, codes_list
+            )
+        ):
             cached = self.cache.read(table_name)
-            if not cached.empty:
-                # Validate date range
-                if start_date and end_date:
-                    valid = cached[
-                        (cached["suspend_date"] >= int(start_date)) &
-                        (cached["suspend_date"] <= int(end_date))
-                    ]
-                    if not valid.empty:
-                        return valid
-
-        all_results = []
-        if suspend_date:
-            kwargs = {"suspend_date": suspend_date}
-            if ts_code:
-                kwargs["ts_code"] = ts_code if isinstance(ts_code, str) else ",".join(ts_code)
-            result = self._call_api(self.pro.suspend_d, **kwargs)
-            if result is not None and not result.empty:
-                all_results.append(result)
-        elif start_date and end_date:
-            # Loop over every WEEK (not month) since suspend_d is a single-date
-            # query and suspensions can start any trading day.
-            current = pd.Timestamp(str(start_date))
-            end = pd.Timestamp(str(end_date))
-            while current <= end:
-                date_str = current.strftime("%Y%m%d")
-                kwargs = {"suspend_date": date_str}
-                if ts_code:
-                    kwargs["ts_code"] = ts_code if isinstance(ts_code, str) else ",".join(ts_code)
-                try:
-                    chunk = self._call_api(self.pro.suspend_d, **kwargs)
-                    if chunk is not None and not chunk.empty:
-                        all_results.append(chunk)
-                except Exception as e:
-                    logger.debug(f"suspend_d {date_str}: {e}")
-                current += pd.Timedelta(days=1)
-        else:
-            kwargs = {}
-            if ts_code:
-                kwargs["ts_code"] = ts_code if isinstance(ts_code, str) else ",".join(ts_code)
-            result = self._call_api(self.pro.suspend_d, **kwargs)
-            if result is not None and not result.empty:
-                all_results.append(result)
-
-        if not all_results:
-            return pd.DataFrame()
-
-        result = pd.concat(all_results, ignore_index=True)
-        if not result.empty:
-            # Handle API response variability: column may be 'suspend_date'
-            # or 'trade_date' or 'ann_date' depending on API version
-            date_col = None
-            for candidate in ["suspend_date", "trade_date", "ann_date"]:
-                if candidate in result.columns:
-                    date_col = candidate
-                    break
-            # Standardize column names: API may return 'trade_date' instead
-            # of 'suspend_date'. We ALWAYS normalize to 'suspend_date' +
-            # 'resume_date' for downstream consumers (TradableMask).
-            if date_col is None:
-                logger.warning(
-                    f"suspend_d returned columns: {list(result.columns)}. "
-                    f"Expected suspend_date. Skipping cache write."
+            if cached.empty:
+                return cached
+            if "trade_date" not in cached.columns and "suspend_date" in cached.columns:
+                cached = cached.rename(columns={"suspend_date": "trade_date"})
+            mask = (
+                (cached["trade_date"].astype(int) >= coverage_start)
+                & (cached["trade_date"].astype(int) <= coverage_end)
+            )
+            if codes_list and "ts_code" in cached.columns:
+                mask &= cached["ts_code"].astype(str).isin(
+                    [str(code) for code in codes_list]
                 )
-                return result
+            return cached.loc[mask].copy()
 
-            if date_col != "suspend_date":
-                result = result.rename(columns={date_col: "suspend_date"})
-                date_col = "suspend_date"  # update after rename
+        kwargs = {"suspend_type": "S"}
+        if suspend_date:
+            kwargs["trade_date"] = suspend_date
+        elif start_date and end_date:
+            kwargs["start_date"] = start_date
+            kwargs["end_date"] = end_date
+        if ts_code:
+            kwargs["ts_code"] = (
+                ts_code if isinstance(ts_code, str) else ",".join(ts_code)
+            )
 
-            result[date_col] = result[date_col].astype("int32")
+        result = self._call_api(self.pro.suspend_d, **kwargs)
+        if result is None:
+            raise RuntimeError("suspend_d API returned no response")
+        if result.empty:
+            if coverage_start is not None and coverage_end is not None:
+                self.manifest.record_fetch(
+                    table_name, coverage_start, coverage_end, codes=codes_list
+                )
+            return result
 
-            # Handle resume_date similarly
-            if "resume_date" in result.columns:
-                result["resume_date"] = pd.to_numeric(
-                    result["resume_date"], errors="coerce"
-                ).fillna(20991231).astype("int32")
-            else:
-                result["resume_date"] = np.int32(20991231)
+        if "trade_date" not in result.columns and "suspend_date" in result.columns:
+            result = result.rename(columns={"suspend_date": "trade_date"})
+        if "trade_date" not in result.columns:
+            raise RuntimeError(
+                f"suspend_d response missing trade_date: {list(result.columns)}"
+            )
+        result["trade_date"] = pd.to_numeric(
+            result["trade_date"], errors="raise"
+        ).astype("int32")
+        if start_date:
+            result = result[result["trade_date"] >= int(start_date)]
+        if end_date:
+            result = result[result["trade_date"] <= int(end_date)]
+        result = result.drop_duplicates(
+            ["ts_code", "trade_date", "suspend_type"], keep="last"
+        )
+        result["year"] = result["trade_date"] // 10000
+        result["month"] = (result["trade_date"] % 10000) // 100
+        self.cache.write(result, table_name, partition_cols=["year", "month"])
+        result.drop(columns=["year", "month"], inplace=True, errors="ignore")
 
-            # Post-filter to requested date range
-            if start_date:
-                result = result[result[date_col] >= int(start_date)]
-            if end_date:
-                result = result[result[date_col] <= int(end_date)]
-
-            result["year"] = result[date_col] // 10000
-            result["month"] = (result[date_col] % 10000) // 100
-            self.cache.write(result, table_name, partition_cols=["year", "month"])
-            result.drop(columns=["year", "month"], inplace=True, errors="ignore")
-
+        if coverage_start is None or coverage_end is None:
+            coverage_start = int(result["trade_date"].min())
+            coverage_end = int(result["trade_date"].max())
+        self.manifest.record_fetch(
+            table_name, coverage_start, coverage_end, codes=codes_list
+        )
         return result
 
     # ------------------------------------------------------------------
@@ -1144,6 +1260,7 @@ class TushareClient:
             for aggregating and writing (e.g., Phase 0 monthly batches).
         """
         table_name = "limit_status"
+        codes_list = ([ts_code] if isinstance(ts_code, str) else ts_code) if ts_code else None
 
         if use_cache:
             # When querying a single trade_date, filter cache precisely.
@@ -1166,14 +1283,31 @@ class TushareClient:
                 date_filters.append(("ts_code", "in", codes))
 
             if date_filters:
-                cached = self.cache.read(table_name, filters=date_filters)
-                if not cached.empty:
-                    return cached
+                # Use the fetch manifest as the authoritative coverage check.
+                # Business-data min/max checks cannot prove every date×code
+                # combination has a record.
+                if start_date and end_date:
+                    if self.manifest.has_coverage(table_name, int(start_date), int(end_date), codes_list):
+                        cached = self.cache.read(table_name, filters=date_filters)
+                        if not cached.empty:
+                            return cached
+                elif trade_date:
+                    # Single-date: manifest has_coverage for the broader range means
+                    # this specific date was also fetched.  Plus verify codes.
+                    if self.manifest.has_coverage(table_name, int(trade_date), int(trade_date), codes_list):
+                        cached = self.cache.read(table_name, filters=date_filters)
+                        if not cached.empty:
+                            # Also verify ALL requested codes in the returned data
+                            if ts_code and "ts_code" in cached.columns:
+                                codes = [ts_code] if isinstance(ts_code, str) else ts_code
+                                cached_codes = set(cached["ts_code"].astype(str).unique())
+                                if set(codes).issubset(cached_codes):
+                                    return cached
+                            else:
+                                return cached
 
-        # Build ts_code argument once
-        ts_code_arg = None
-        if ts_code:
-            ts_code_arg = ts_code if isinstance(ts_code, str) else ",".join(ts_code)
+        # stk_limit documents single-code or single-date queries.
+        ts_code_arg = ts_code if isinstance(ts_code, str) else None
 
         # Single trade_date branch
         if trade_date:
@@ -1182,37 +1316,55 @@ class TushareClient:
                 kwargs["ts_code"] = ts_code_arg
             result = self._call_api(self.pro.stk_limit, **kwargs)
 
-        # Date range branch — iterate TRADING DAYS only, not all calendar days
+        # Date range branch. Explicit codes are fetched one code per request,
+        # safely below the 5800-row response cap. Without codes, fall back to
+        # one full-market trading-day query at a time.
         elif start_date and end_date:
             all_results = []
-            # Use trading calendar to avoid calling API on weekends/holidays
-            try:
-                cal = self.get_trade_cal(start_date=start_date, end_date=end_date)
-                if not cal.empty:
-                    trade_dates = sorted(cal["cal_date"].unique())
-                else:
-                    # Fallback: every calendar day (slow)
+            failed_dates: list[str] = []
+            if codes_list:
+                query_specs = [
+                    (
+                        str(code),
+                        {
+                            "ts_code": str(code),
+                            "start_date": start_date,
+                            "end_date": end_date,
+                        },
+                    )
+                    for code in codes_list
+                ]
+            else:
+                try:
+                    cal = self.get_trade_cal(
+                        start_date=start_date, end_date=end_date
+                    )
+                    trade_dates = (
+                        sorted(cal["cal_date"].unique())
+                        if not cal.empty else []
+                    )
+                except Exception:
                     trade_dates = [
                         int(d.strftime("%Y%m%d"))
                         for d in pd.date_range(start_date, end_date)
                     ]
-            except Exception:
-                trade_dates = [
-                    int(d.strftime("%Y%m%d"))
-                    for d in pd.date_range(start_date, end_date)
+                query_specs = [
+                    (str(date_int), {"trade_date": str(date_int)})
+                    for date_int in trade_dates
                 ]
+                if not query_specs:
+                    failed_dates.append("no_trade_dates_available")
 
-            for date_int in trade_dates:
-                date_str = str(date_int)
-                k = {"trade_date": date_str}
-                if ts_code_arg:
-                    k["ts_code"] = ts_code_arg
+            for chunk_name, query_kwargs in query_specs:
                 try:
-                    chunk = self._call_api(self.pro.stk_limit, **k)
+                    chunk = self._call_api(
+                        self.pro.stk_limit, **query_kwargs
+                    )
                     if chunk is not None and not chunk.empty:
                         all_results.append(chunk)
                 except Exception as e:
-                    logger.debug(f"stk_limit {date_str}: {e}")
+                    logger.debug(f"stk_limit {chunk_name}: {e}")
+                    failed_dates.append(chunk_name)
             result = pd.concat(all_results, ignore_index=True) if all_results else pd.DataFrame()
 
         # No date filter — latest only
@@ -1221,6 +1373,19 @@ class TushareClient:
             if ts_code_arg:
                 kwargs["ts_code"] = ts_code_arg
             result = self._call_api(self.pro.stk_limit, **kwargs)
+
+        if (
+            result is not None
+            and not result.empty
+            and codes_list
+            and not isinstance(ts_code, str)
+            and "ts_code" in result.columns
+        ):
+            result = result[
+                result["ts_code"].astype(str).isin(
+                    [str(code) for code in codes_list]
+                )
+            ].copy()
 
         if result is not None and not result.empty:
             # Validate required columns exist
@@ -1256,6 +1421,20 @@ class TushareClient:
                     replace_partitions=True,
                 )
                 result.drop(columns=["year", "month"], inplace=True, errors="ignore")
+        if start_date and end_date:
+            if failed_dates:
+                raise RuntimeError(
+                    "stk_limit fetch incomplete; failed dates: "
+                    + ", ".join(failed_dates[:20])
+                )
+            if write_cache:
+                self.manifest.record_fetch(
+                    table_name, int(start_date), int(end_date), codes=codes_list
+                )
+        elif trade_date and write_cache:
+            self.manifest.record_fetch(
+                table_name, int(trade_date), int(trade_date), codes=codes_list
+            )
 
         return result if result is not None else pd.DataFrame()
 

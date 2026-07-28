@@ -229,7 +229,7 @@ def eligibility_snapshot(
         if not np.isnan(avg_amt) and avg_amt < min_amount_20d:
             exclude("liquidity_amount_20d")
             continue
-        if eligibility.get("exclude_st", True) and is_st_stock(code, stock_status):
+        if eligibility.get("exclude_st", True) and is_st_stock(code, stock_status, trade_date=int(trade_date)):
             exclude("st_status")
             continue
         if eligibility.get("exclude_suspend", True) and is_suspended(
@@ -238,7 +238,8 @@ def eligibility_snapshot(
             exclude("suspended")
             continue
         if eligibility.get("exclude_limit_down_event", True) and (
-            "pct_chg" in stock.index and stock["pct_chg"] < -9.5
+            "pct_chg" in stock.index
+            and stock["pct_chg"] < (-19.5 if (str(code).startswith("300") or str(code).startswith("688")) else -9.5)
         ):
             exclude("limit_down_event_day")
             continue
@@ -334,7 +335,8 @@ def active_stress_metrics(
                     hit = abs(close - down_limit) < 0.005
         if not hit:
             pct = float(stock.get("pct_chg", np.nan))
-            hit = bool(np.isfinite(pct) and pct <= -9.5)
+            limit_pct = -19.5 if (str(code).startswith("300") or str(code).startswith("688")) else -9.5
+            hit = bool(np.isfinite(pct) and pct <= limit_pct)
         if hit:
             limit_down_codes.append(code)
 

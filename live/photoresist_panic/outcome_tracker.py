@@ -65,6 +65,7 @@ def resolve_entry(
     signal: dict,
     limit_status: pd.DataFrame | None = None,
     stock_status: pd.DataFrame | None = None,
+    namechange: pd.DataFrame | None = None,
     min_components: int = 3,
     entry_liquidity: dict | None = None,
 ) -> dict:
@@ -110,7 +111,7 @@ def resolve_entry(
         if "vol" in stock.index and float(stock.get("vol", 0) or 0) == 0:
             exclusions.append({"ts_code": code, "reason": "suspended_entry_day"})
             continue
-        if is_st_stock(code, stock_status):
+        if is_st_stock(code, stock_status, trade_date=entry_date, namechange=namechange):
             exclusions.append({"ts_code": code, "reason": "st_status"})
             continue
         if _hit_limit_up(stock, code, entry_date, limit_status):
@@ -397,8 +398,13 @@ def evaluate_signal_outcome(
         }
     else:
         resolution = resolve_entry(
-            prices, calendar, signal, limit_status, stock_status, min_components,
-            config.get("entry_liquidity"),
+            prices,
+            calendar,
+            signal,
+            limit_status=limit_status,
+            stock_status=stock_status,
+            min_components=min_components,
+            entry_liquidity=config.get("entry_liquidity"),
         )
     record["entry_status"] = resolution["entry_status"]
     record["entry_date"] = resolution["entry_date"]

@@ -230,7 +230,7 @@ class TestBasketConstruction:
         assert "skipped_days_insufficient_constituents" in diag.columns
         assert "skipped_days_insufficient_eligible_components" in diag.columns
 
-    def test_three_component_frozen_basket_audits_infeasible_30pct_cap(
+    def test_three_component_cap_enforced_with_cash_residual(
         self, sample_universe_config, sample_prices
     ):
         sample_universe_config["universe"]["core"][2]["effective_start"] = 20190101
@@ -246,9 +246,10 @@ class TestBasketConstruction:
         )["core_basket"]
         assert not core.empty
         assert set(core["component_count"]) == {3}
-        assert not core["weight_cap_feasible"].any()
-        assert not core["weight_cap_satisfied"].any()
-        assert np.allclose(core["realized_max_single_weight"], 1.0 / 3.0)
+        # 3 stocks × 30% = 90% invested, 10% cash — cap IS satisfied
+        assert core["weight_cap_satisfied"].all()
+        assert np.allclose(core["realized_max_single_weight"], 0.30)
+        assert np.allclose(core["cash_weight"], 0.10, atol=0.02)
 
 
 # ═══════════════════════════════════════════════════════════════════════

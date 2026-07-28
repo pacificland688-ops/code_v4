@@ -22,6 +22,7 @@ import hashlib
 import json
 import sys
 import warnings
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -32,6 +33,7 @@ import yaml
 warnings.filterwarnings("ignore")
 
 ROOT = Path(__file__).resolve().parents[1]
+SCRIPT_VERSION = "2.1.0"  # real limit prices + namechange + weight cap fix
 DEFAULT_UNIVERSE_CONFIG = ROOT / "configs" / "photoresist_universe.yaml"
 DEFAULT_RESEARCH_CONFIG = ROOT / "configs" / "photoresist_panic_research.yaml"
 DEFAULT_OUT_DIR = ROOT / "outputs" / "analysis" / "photoresist_panic"
@@ -42,6 +44,7 @@ INDEX_DIR = ROOT / "data" / "parquet" / "index_daily"
 LIMIT_DIR = ROOT / "data" / "parquet" / "limit_status"
 SUSPEND_DIR = ROOT / "data" / "parquet" / "suspend_status"
 STOCK_STATUS_PATH = ROOT / "data" / "parquet" / "stock_status"
+NAMECHANGE_PATH = ROOT / "data" / "parquet" / "namechange"
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -56,7 +59,15 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--universe-config", default=str(DEFAULT_UNIVERSE_CONFIG))
     p.add_argument("--research-config", default=str(DEFAULT_RESEARCH_CONFIG))
     p.add_argument("--out-dir", default=str(DEFAULT_OUT_DIR))
+    p.add_argument("--strict-tradability", action="store_true",
+                   help="Fail if any tradability data source is a proxy")
     return p.parse_args()
+
+
+def generate_run_id(prefix: str = "panic") -> str:
+    """Generate a unique, sortable run identifier."""
+    ts = datetime.now().strftime("%Y%m%dT%H%M%S")
+    return f"{prefix}_{ts}"
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -186,7 +197,44 @@ def _normalize(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def _iter_year_dirs(base: Path, start: int, end: int):
+def _safe_dedup(df: pd.DataFrame, keys: list[str] | None = None) -> pd.DataFrame:
+    """Drop duplicate rows with conflict detection.
+
+    If duplicates exist with different values in non-key columns, warn
+    and raise rather than silently keeping the first.
+    """
+    if df.empty:
+        return df
+    if keys is None:
+        keys = [c for c in ("ts_code", "trade_date") if c in df.columns]
+    if not keys or not all(k in df.columns for k in keys):
+        return df.drop_duplicates()
+    dup_mask = df.duplicated(subset=keys, keep=False)
+    if not dup_mask.any():
+        return df
+    dup_groups = df[dup_mask].groupby(keys)
+    n_conflicts = 0
+    for _, group in dup_groups:
+        if len(group) == 1:
+            continue
+        # Check if all rows in the group are identical
+        numeric_cols = group.select_dtypes(include=["number"]).columns
+        for col in numeric_cols:
+            vals = group[col].dropna()
+            if len(vals) > 1 and vals.nunique() > 1:
+                n_conflicts += 1
+                break
+    if n_conflicts > 0:
+        print(f"  WARNING: {n_conflicts} duplicate key groups with conflicting values")
+    return df.drop_duplicates(subset=keys, keep="first")
+
+
+def _iter_year_dirs(base: Path, start: int, end: int, margin: int = 1):
+    """Yield year=* directories within [start-margin, end+margin].
+
+    The ±1 year margin is needed for rolling quantile warm-up, but the
+    manifest MUST record the *actual* loaded range so provenance is exact.
+    """
     sy, ey = start // 10000, end // 10000
     for d in sorted(base.glob("year=*")):
         if not d.is_dir():
@@ -195,14 +243,15 @@ def _iter_year_dirs(base: Path, start: int, end: int):
             yr = int(d.name.split("=", 1)[1])
         except ValueError:
             continue
-        if sy - 1 <= yr <= ey + 1:
+        if sy - margin <= yr <= ey + margin:
             yield d
 
 
 def load_prices(start: int, end: int, ts_codes: list[str]) -> pd.DataFrame:
     """Load adjusted close prices for specified stocks."""
-    cols = ["ts_code", "trade_date", "adj_close", "open", "high", "low",
-            "pct_chg", "vol", "amount"]
+    cols = ["ts_code", "trade_date", "close", "adj_open", "adj_high",
+            "adj_low", "adj_close", "open", "high", "low", "pct_chg",
+            "vol", "amount"]
     chunks = []
     code_set = set(ts_codes)
     for yr_dir in _iter_year_dirs(PRICES_DIR, start, end):
@@ -302,6 +351,8 @@ def load_suspend_status(start: int, end: int, ts_codes: list[str]) -> pd.DataFra
     for yr_dir in _iter_year_dirs(SUSPEND_DIR, start, end):
         for pq in sorted(yr_dir.rglob("*.parquet")):
             df = _normalize(pd.read_parquet(pq))
+            if "trade_date" not in df.columns and "suspend_date" in df.columns:
+                df = df.rename(columns={"suspend_date": "trade_date"})
             if "ts_code" in df.columns:
                 df = df[df["ts_code"].isin(code_set)]
             if len(df) == 0:
@@ -319,6 +370,36 @@ def load_stock_status() -> pd.DataFrame | None:
     try:
         df = _normalize(pd.read_parquet(STOCK_STATUS_PATH))
         return df
+    except Exception:
+        return None
+
+
+def load_namechange(codes: list[str] | None = None) -> pd.DataFrame | None:
+    """Load historical name changes (股票曾用名) for PIT ST detection.
+
+    Tushare namechange API returns start_date, end_date, name columns.
+    This provides true historical ST→normal transitions (摘帽).
+    Returns None if data is unavailable.
+    """
+    if not NAMECHANGE_PATH.exists():
+        return None
+    try:
+        chunks = []
+        for pq in sorted(NAMECHANGE_PATH.rglob("*.parquet")):
+            df = _normalize(pd.read_parquet(pq))
+            if codes and "ts_code" in df.columns:
+                code_set = set(codes)
+                df = df[df["ts_code"].astype(str).isin(code_set)]
+            if len(df) > 0:
+                chunks.append(df)
+        if not chunks:
+            return None
+        result = pd.concat(chunks, ignore_index=True)
+        # Ensure date columns are numeric
+        for dc in ["start_date", "end_date", "ann_date"]:
+            if dc in result.columns:
+                result[dc] = pd.to_numeric(result[dc], errors="coerce")
+        return result
     except Exception:
         return None
 
@@ -389,15 +470,20 @@ def compute_amount_ratio_20d(prices: pd.DataFrame) -> pd.Series:
 
 
 def _limit_flag_col(limit_status: pd.DataFrame, side: str) -> str | None:
-    """Return a boolean-like limit flag column; ignore limit price columns."""
+    """Return a usable limit-indicator column name.
+
+    Prefers real price columns (up_limit / down_limit) over boolean flags.
+    """
     if limit_status is None or limit_status.empty:
         return None
     side = side.lower()
-    price_cols = {f"{side}_limit", f"limit_{side}_price", f"{side}limit"}
+    # Prefer exact price columns
+    price_col = f"{side}_limit"
+    if price_col in limit_status.columns:
+        return price_col
+    # Fall back to boolean flag columns
     for col in limit_status.columns:
         lower = str(col).lower()
-        if lower in price_cols:
-            continue
         if side not in lower:
             continue
         if not any(token in lower for token in ("flag", "status", "limit", "is_")):
@@ -411,6 +497,90 @@ def _limit_flag_col(limit_status: pd.DataFrame, side: str) -> str | None:
     return None
 
 
+def _is_at_limit(
+    ts_code: str,
+    trade_date: int,
+    side: str,
+    limit_status: pd.DataFrame | None,
+    prices: pd.DataFrame | None = None,
+    tick_tolerance: float = 0.005,
+) -> tuple[bool, str]:
+    """Check if a stock hit limit up/down using best available data.
+
+    Resolution order:
+    1. Real limit price (up_limit / down_limit column) compared to close.
+    2. Boolean flag column.
+    3. pct_chg proxy (broad-market thresholds, inaccurate for ChiNext/STAR).
+
+    Returns (is_limit: bool, source: str).
+    source ∈ {"price", "flag", "pct_chg_proxy", "unavailable"}.
+    """
+    side = side.lower()
+    side_col = f"{side}_limit"
+
+    # ── Priority 1: real limit price comparison ──
+    if limit_status is not None and not limit_status.empty and prices is not None:
+        if side_col in limit_status.columns and "close" in prices.columns:
+            limit_row = limit_status[
+                (limit_status["ts_code"].astype(str) == str(ts_code))
+                & (limit_status["trade_date"].astype(int) == int(trade_date))
+            ]
+            if not limit_row.empty:
+                limit_price = limit_row[side_col].values[0]
+                if not pd.isna(limit_price):
+                    price_row = prices[
+                        (prices["ts_code"].astype(str) == str(ts_code))
+                        & (prices["trade_date"].astype(int) == int(trade_date))
+                    ]
+                    if not price_row.empty:
+                        close = price_row["close"].values[0]
+                        if not pd.isna(close) and close > 0:
+                            # Tick size: 0.001 for ChiNext/STAR, 0.01 otherwise
+                            code_str = str(ts_code)
+                            tick = 0.001 if code_str.startswith(("300", "688")) else 0.01
+                            if abs(close - limit_price) <= tick + tick_tolerance:
+                                return True, "price"
+                            return False, "price"
+
+    # ── Priority 2: boolean flag column ──
+    if limit_status is not None and not limit_status.empty:
+        flag_col = _limit_flag_col(limit_status, side)
+        if flag_col and flag_col != side_col:  # not the price column
+            flag_row = limit_status[
+                (limit_status["ts_code"].astype(str) == str(ts_code))
+                & (limit_status["trade_date"].astype(int) == int(trade_date))
+            ]
+            if not flag_row.empty:
+                val = flag_row[flag_col].values[0]
+                if not pd.isna(val):
+                    val_str = str(val).lower()
+                    if val_str in {"1", "true", "yes"}:
+                        return True, "flag"
+                    if val_str in {"0", "false", "no"}:
+                        return False, "flag"
+
+    # ── Priority 3: pct_chg proxy (last resort) ──
+    if prices is not None and "pct_chg" in prices.columns:
+        price_row = prices[
+            (prices["ts_code"].astype(str) == str(ts_code))
+            & (prices["trade_date"].astype(int) == int(trade_date))
+        ]
+        if not price_row.empty:
+            pct = price_row["pct_chg"].values[0]
+            if not pd.isna(pct):
+                code_str = str(ts_code)
+                if code_str.startswith("300") or code_str.startswith("688"):
+                    threshold = 19.5 if side == "up" else -19.5
+                else:
+                    threshold = 9.5 if side == "up" else -9.5
+                if side == "up":
+                    return pct >= threshold, "pct_chg_proxy"
+                else:
+                    return pct <= threshold, "pct_chg_proxy"
+
+    return False, "unavailable"
+
+
 def check_consecutive_limit_down(
     ts_code: str,
     trade_date: int,
@@ -421,31 +591,26 @@ def check_consecutive_limit_down(
 ) -> bool:
     """Check if a stock has >= n_days consecutive limit-down up to trade_date.
 
-    Returns True if consecutive limit-down detected (should be excluded).
+    Uses _is_at_limit which prefers real limit prices over pct_chg proxy.
     """
-    # Priority: use exact limit_status if available
-    if limit_status is not None:
-        stock_limits = limit_status[limit_status["ts_code"] == ts_code].copy()
-        if "trade_date" in stock_limits.columns:
-            stock_limits = stock_limits.sort_values("trade_date")
-            ld_col = _limit_flag_col(stock_limits, "down")
-            if ld_col:
-                recent = stock_limits[
-                    (stock_limits["trade_date"] <= trade_date)
-                ].tail(n_days)
-                if len(recent) >= n_days and (recent[ld_col].astype(bool).sum() >= n_days):
-                    return True
+    # Walk back n_days trading days from trade_date via calendar
+    cal_idx = int(np.searchsorted(calendar, int(trade_date)))
+    if cal_idx >= len(calendar) or calendar[cal_idx] != int(trade_date):
+        cal_idx = cal_idx - 1 if cal_idx > 0 else 0
+    check_dates = [int(calendar[max(0, cal_idx - i)]) for i in range(n_days)]
+    check_dates = [d for d in check_dates if d <= int(trade_date)]
+    if len(check_dates) < n_days:
+        return False
 
-    # Fallback: use pct_chg proxy
-    stock_prices = prices[
-        (prices["ts_code"] == ts_code) &
-        (prices["trade_date"] <= trade_date)
-    ].sort_values("trade_date").tail(n_days)
-
-    if "pct_chg" in stock_prices.columns and len(stock_prices) >= n_days:
-        if (stock_prices["pct_chg"] < -9.5).sum() >= n_days:
-            return True
-
+    consecutive = 0
+    for d in check_dates:
+        is_limit, src = _is_at_limit(ts_code, d, "down", limit_status, prices)
+        if is_limit:
+            consecutive += 1
+            if consecutive >= n_days:
+                return True
+        else:
+            consecutive = 0
     return False
 
 
@@ -459,10 +624,16 @@ def is_suspended(
 
     Priority: suspend_status data; fallback: missing price/zero volume.
     """
-    if suspend_status is not None:
+    if suspend_status is not None and not suspend_status.empty:
+        # Tushare client stores "suspend_date"; normalize to "trade_date"
+        if "ts_code" not in suspend_status.columns:
+            return False  # guard against empty shell DataFrame
+        date_col = "trade_date" if "trade_date" in suspend_status.columns else "suspend_date"
+        if date_col not in suspend_status.columns:
+            return False
         stock_sus = suspend_status[
             (suspend_status["ts_code"] == ts_code) &
-            (suspend_status["trade_date"] == trade_date)
+            (suspend_status[date_col] == trade_date)
         ]
         if len(stock_sus) > 0:
             sus_cols = [c for c in stock_sus.columns if "sus" in c.lower()]
@@ -485,14 +656,64 @@ def is_suspended(
 def is_st_stock(
     ts_code: str,
     stock_status: pd.DataFrame | None,
+    trade_date: int | None = None,
+    namechange: pd.DataFrame | None = None,
 ) -> bool:
-    """Check if a stock is ST/*ST. Default: not ST if data unavailable."""
+    """Check if a stock is ST/*ST at a specific trade_date (PIT).
+
+    Resolution order:
+    1. namechange (股票曾用名) — true PIT with start_date/end_date.
+    2. stock_status with trade_date column — sorted by date.
+    3. stock_status without trade_date — current name only (best-effort).
+
+    PIT note: without namechange data, historical ST→normal (摘帽) is missed.
+    """
+    code_str = str(ts_code)
+
+    # Priority 1: namechange historical data (works independently of stock_status)
+    if namechange is not None and not namechange.empty:
+        nc = namechange[namechange["ts_code"].astype(str) == code_str].copy()
+        if not nc.empty:
+            date_col = None
+            for c in ["start_date", "trade_date", "ann_date"]:
+                if c in nc.columns:
+                    date_col = c
+                    break
+            if date_col is not None and trade_date is not None:
+                nc[date_col] = pd.to_numeric(nc[date_col], errors="coerce")
+                nc = nc.sort_values(date_col)
+                # Filter by start_date <= trade_date AND (end_date is null or >= trade_date)
+                applicable = nc[
+                    (nc[date_col] <= trade_date)
+                ]
+                if "end_date" in nc.columns:
+                    nc["end_date"] = pd.to_numeric(nc["end_date"], errors="coerce")
+                    applicable = applicable[
+                        applicable["end_date"].isna()
+                        | (applicable["end_date"] >= trade_date)
+                    ]
+                if not applicable.empty:
+                    latest = applicable.iloc[-1]
+                    for col in latest.index:
+                        if "name" in col.lower():
+                            val = str(latest[col]).upper()
+                            if "ST" in val or "*ST" in val:
+                                return True
+                    return False
+
+    # Priority 2/3: stock_status (only checked if namechange didn't resolve)
     if stock_status is None:
         return False
-    stock_row = stock_status[stock_status["ts_code"] == ts_code]
-    if len(stock_row) == 0:
+
+    mask = stock_status["ts_code"].astype(str) == code_str
+    if trade_date is not None and "trade_date" in stock_status.columns:
+        mask = mask & (stock_status["trade_date"].astype(int) <= trade_date)
+    stock_rows = stock_status[mask]
+    if len(stock_rows) == 0:
         return False
-    # Look for ST-related columns
+    if trade_date is not None and "trade_date" in stock_rows.columns:
+        stock_rows = stock_rows.sort_values("trade_date")
+    stock_row = stock_rows.iloc[-1:] if trade_date is not None else stock_rows.iloc[:1]
     for col in stock_row.columns:
         if "st" in col.lower() or "name" in col.lower():
             val = str(stock_row[col].values[0]).upper()
@@ -512,6 +733,7 @@ def filter_eligible_stocks(
     limit_status: pd.DataFrame | None = None,
     suspend_status: pd.DataFrame | None = None,
     stock_status: pd.DataFrame | None = None,
+    namechange: pd.DataFrame | None = None,
     exec_date: int | None = None,
     exec_prices: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
@@ -567,7 +789,7 @@ def filter_eligible_stocks(
         if not np.isnan(avg_amt) and avg_amt < min_amount_20d:
             continue
 
-        if exclude_st and is_st_stock(code, stock_status):
+        if exclude_st and is_st_stock(code, stock_status, trade_date=int(trade_date), namechange=namechange):
             continue
 
         if exclude_suspend_flag:
@@ -576,8 +798,11 @@ def filter_eligible_stocks(
             if exec_date is not None and is_suspended(code, int(exec_date), suspend_status, prices):
                 continue
 
-        if exclude_ld_event and "pct_chg" in stock.index:
-            if stock["pct_chg"] < -9.5:
+        if exclude_ld_event:
+            is_ld, ld_src = _is_at_limit(
+                code, int(trade_date), "down", limit_status, prices,
+            )
+            if is_ld:
                 continue
 
         if exclude_consec_ld and check_consecutive_limit_down(
@@ -585,11 +810,12 @@ def filter_eligible_stocks(
         ):
             continue
 
-        if exclude_limit_up_entry and exec_date is not None and exec_prices is not None:
-            exec_row = exec_prices[exec_prices["ts_code"] == code]
-            if len(exec_row) > 0 and "pct_chg" in exec_row.columns:
-                if exec_row["pct_chg"].values[0] > 9.5:
-                    continue
+        if exclude_limit_up_entry and exec_date is not None:
+            is_lu, lu_src = _is_at_limit(
+                code, int(exec_date), "up", limit_status, prices,
+            )
+            if is_lu:
+                continue
 
         eligible_rows.append(stock)
 
@@ -707,15 +933,10 @@ def build_basket_daily(
 
             if max_single_weight and max_single_weight < 1:
                 weights = np.clip(weights, 0, max_single_weight)
-                s = weights.sum()
-                if s > 0:
-                    weights = weights / s
+                # Do NOT renormalize — excess weight stays as cash (0% return).
+                # This ensures the cap is actually enforced.
             realized_max_weight = float(weights.max()) if len(weights) else np.nan
-            weight_cap_feasible = bool(
-                not max_single_weight
-                or max_single_weight >= 1
-                or n_stocks * max_single_weight >= 1.0 - 1e-12
-            )
+            cash_weight = float(1.0 - weights.sum()) if len(weights) else 0.0
             weight_cap_satisfied = bool(
                 not max_single_weight
                 or max_single_weight >= 1
@@ -726,21 +947,18 @@ def build_basket_daily(
             down_ratio = float(np.mean(rets < 0))
             large_drop_ratio = float(np.mean(rets < -0.07))
 
-            # Limit up/down ratio — prefer exact limit_status
-            if limit_status is not None:
-                limit_day = limit_status[limit_status["trade_date"] == int(td)]
-                limit_codes = set(limit_day["ts_code"]) & set(eligible_codes)
-                if len(limit_codes) > 0 and n_stocks > 0:
-                    ld_col = _limit_flag_col(limit_day, "down")
-                    lu_col = _limit_flag_col(limit_day, "up")
-                    limit_up_ratio = float(limit_day[limit_day["ts_code"].isin(limit_codes)][lu_col].astype(bool).mean()) if lu_col else float(np.mean(rets > 0.095))
-                    limit_down_ratio = float(limit_day[limit_day["ts_code"].isin(limit_codes)][ld_col].astype(bool).mean()) if ld_col else float(np.mean(rets < -0.095))
-                else:
-                    limit_up_ratio = float(np.mean(rets > 0.095))
-                    limit_down_ratio = float(np.mean(rets < -0.095))
-            else:
-                limit_up_ratio = float(np.mean(rets > 0.095))
-                limit_down_ratio = float(np.mean(rets < -0.095))
+            # Limit up/down ratio — use _is_at_limit (prefers real price data)
+            lu_count = 0
+            ld_count = 0
+            for code in eligible_codes:
+                is_lu, _ = _is_at_limit(code, int(td), "up", limit_status, prices)
+                is_ld, _ = _is_at_limit(code, int(td), "down", limit_status, prices)
+                if is_lu:
+                    lu_count += 1
+                if is_ld:
+                    ld_count += 1
+            limit_up_ratio = float(lu_count / n_stocks) if n_stocks > 0 else 0.0
+            limit_down_ratio = float(ld_count / n_stocks) if n_stocks > 0 else 0.0
 
             # Real amount_ratio_20d
             amt_ratios = []
@@ -762,7 +980,7 @@ def build_basket_daily(
                 "component_count": n_stocks,
                 "configured_max_single_weight": max_single_weight,
                 "realized_max_single_weight": realized_max_weight,
-                "weight_cap_feasible": weight_cap_feasible,
+                "cash_weight": cash_weight,
                 "weight_cap_satisfied": weight_cap_satisfied,
                 "median_amount_ratio_20d": median_amount_ratio_20d,
                 "research_only": research_only,
@@ -1076,8 +1294,11 @@ def main() -> int:
 
     limit_status = load_limit_status(args.start, args.end, all_codes)
     if limit_status is not None:
-        limit_status_src = "exact"
-        print(f"  limit_status: {len(limit_status):,} rows (exact)")
+        # Check if we have real price columns (up_limit / down_limit)
+        has_price_cols = ("up_limit" in limit_status.columns
+                          and "down_limit" in limit_status.columns)
+        limit_status_src = "exact_prices" if has_price_cols else "flags_only"
+        print(f"  limit_status: {len(limit_status):,} rows ({limit_status_src})")
     else:
         print("  limit_status: UNAVAILABLE (using pct_chg proxy)")
 
@@ -1094,6 +1315,30 @@ def main() -> int:
         print(f"  stock_status: {len(stock_status):,} rows (exact)")
     else:
         print("  stock_status: UNAVAILABLE (ST filter disabled)")
+
+    namechange = load_namechange(all_codes)
+    if namechange is not None:
+        print(f"  namechange: {len(namechange):,} rows (PIT ST detection available)")
+    else:
+        print("  namechange: UNAVAILABLE (ST detection from stock_status only)")
+
+    # ── Strict tradability gate ─────────────────────────────────────────
+    run_id = generate_run_id()
+    proxy_sources = []
+    if "proxy" in limit_status_src:
+        proxy_sources.append(f"limit_status ({limit_status_src})")
+    if "proxy" in suspend_status_src:
+        proxy_sources.append(f"suspend_status ({suspend_status_src})")
+    if stock_status_src == "unavailable":
+        proxy_sources.append("stock_status (unavailable)")
+    if args.strict_tradability and proxy_sources:
+        print(f"\n  ERROR: --strict-tradability enabled but proxy data sources found:")
+        for s in proxy_sources:
+            print(f"    - {s}")
+        print("  Re-run with real data or without --strict-tradability.")
+        return 1
+    if proxy_sources:
+        print(f"  ⚠ proxy sources: {', '.join(proxy_sources)}")
 
     # Load index data
     benchmark_codes = ["000300.SH", "931865.CSI", "399006.SZ"]
@@ -1204,12 +1449,33 @@ def main() -> int:
         json.dumps(gate_config, sort_keys=True, default=str).encode()
     ).hexdigest()[:16]
 
+    # Compute input hashes for provenance tracking
+    universe_config_hash = hashlib.sha256(
+        Path(args.universe_config).read_bytes()
+    ).hexdigest()[:16]
+    research_config_hash = hashlib.sha256(
+        Path(args.research_config).read_bytes()
+    ).hexdigest()[:16]
+
     manifest = {
-        "schema": "photoresist_panic_events.v2",
+        "schema": "photoresist_panic_events.v3",
+        "run_id": run_id,
+        "script_version": SCRIPT_VERSION,
         "phases_completed": "1-3",
         "status": "RESEARCH_ONLY",
         "frozen": True,
         "date_range": {"start": args.start, "end": args.end},
+        "strict_tradability_enabled": args.strict_tradability,
+        "upstream_inputs": {
+            "universe_config": {
+                "path": str(Path(args.universe_config).relative_to(ROOT)),
+                "sha256": universe_config_hash,
+            },
+            "research_config": {
+                "path": str(Path(args.research_config).relative_to(ROOT)),
+                "sha256": research_config_hash,
+            },
+        },
         "data_sources_available": {
             "prices_adj": True,
             "daily_basic": not daily_basic.empty,
