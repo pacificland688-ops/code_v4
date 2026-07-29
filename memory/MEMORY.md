@@ -1,0 +1,1 @@
+- [Competitor Path State Machine Evaluation](competitor-path-state-machine-evaluation.md) — Detailed assessment of price path state machine proposal vs existing AB classification framework

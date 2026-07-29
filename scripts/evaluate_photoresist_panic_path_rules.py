@@ -2318,12 +2318,132 @@ def cluster_bootstrap_ci(
             float(np.percentile(boot_means, 100 * (1 - alpha))))
 
 
+def build_portfolio_curve(
+    trade_ledger: pd.DataFrame,
+    calendar: np.ndarray,
+    rule_id: str = "R0",
+    cost_bps: int = 100,
+    initial_capital: float = 1.0,
+) -> dict:
+    """Build daily portfolio NAV curve from individual trade outcomes.
+
+    Handles overlapping positions by equal-weighting active trades each day.
+    Returns NAV series, CAGR, max drawdown, exposure, annual returns.
+    """
+    trades = trade_ledger[
+        (trade_ledger["rule_id"] == rule_id)
+        & (trade_ledger["cost_bps"] == cost_bps)
+    ].copy()
+    if trades.empty:
+        return {"nav_series": None, "cagr": np.nan, "max_drawdown": np.nan,
+                "exposure_pct": np.nan, "annual_returns": {}, "n_trades": 0}
+
+    # Only completed / stopped / truncated trades (realized P&L)
+    valid_statuses = {"COMPLETED", "STOPPED_OUT", "TRUNCATED_EXIT"}
+    trades = trades[trades["status"].isin(valid_statuses)]
+    trades = trades.dropna(subset=["net_return", "leg_1_date", "leg_2_date"])
+    if trades.empty:
+        return {"nav_series": None, "cagr": np.nan, "max_drawdown": np.nan,
+                "exposure_pct": np.nan, "annual_returns": {}, "n_trades": 0}
+
+    # Build daily return contribution from each trade
+    # Flat daily return: (1 + net_return)^(1/holding_days) - 1
+    cal_set = set(int(c) for c in calendar)
+    daily_returns: dict[int, list[float]] = {}  # trade_date -> [returns]
+
+    for _, t in trades.iterrows():
+        entry = int(t["leg_1_date"])
+        exit_d = int(t["leg_2_date"])
+        net = float(t["net_return"])
+
+        # Find trading days between entry and exit (inclusive)
+        entry_idx = int(np.searchsorted(calendar, entry))
+        exit_idx = int(np.searchsorted(calendar, exit_d))
+        if exit_idx <= entry_idx:
+            continue
+        n_days = exit_idx - entry_idx
+
+        # Geometric daily return for this position
+        daily_r = (1.0 + net) ** (1.0 / n_days) - 1.0 if n_days > 0 else net
+
+        for i in range(entry_idx, exit_idx):
+            dt = int(calendar[i])
+            if dt not in daily_returns:
+                daily_returns[dt] = []
+            daily_returns[dt].append(daily_r)
+
+    if not daily_returns:
+        return {"nav_series": None, "cagr": np.nan, "max_drawdown": np.nan,
+                "exposure_pct": np.nan, "annual_returns": {}, "n_trades": len(trades)}
+
+    # Build daily NAV
+    all_dates = sorted(daily_returns.keys())
+    nav = initial_capital
+    nav_series = []
+    max_nav = initial_capital
+    max_dd = 0.0
+    exposed_days = 0
+    total_days = len(all_dates)
+
+    for dt in all_dates:
+        rets = daily_returns[dt]
+        if rets:
+            portfolio_r = np.mean(rets)  # equal weight per active position
+            nav *= (1.0 + portfolio_r)
+            nav_series.append((dt, nav))
+            exposed_days += 1
+            if nav > max_nav:
+                max_nav = nav
+            dd = (nav - max_nav) / max_nav
+            if dd < max_dd:
+                max_dd = dd
+
+    # Compute metrics
+    if len(all_dates) < 2:
+        return {"nav_series": nav_series, "cagr": np.nan, "max_drawdown": max_dd,
+                "exposure_pct": np.nan, "annual_returns": {}, "n_trades": len(trades)}
+
+    start_date = all_dates[0]
+    end_date = all_dates[-1]
+    years = (end_date - start_date) / 10000.0  # approximate from YYYYMMDD
+    if years <= 0:
+        years = 1.0
+    cagr = (nav / initial_capital) ** (1.0 / years) - 1.0
+
+    exposure_pct = exposed_days / max(total_days, 1) * 100
+
+    # Annual returns
+    annual_returns = {}
+    for dt, nv in nav_series:
+        yr = dt // 10000
+        if yr not in annual_returns:
+            annual_returns[yr] = {"start_nav": nv, "end_nav": nv}
+        annual_returns[yr]["end_nav"] = nv
+    for yr in annual_returns:
+        s = annual_returns[yr]["start_nav"]
+        e = annual_returns[yr]["end_nav"]
+        annual_returns[yr] = (e / s - 1.0) if s > 0 else np.nan
+
+    return {
+        "nav_series": nav_series,
+        "cagr": cagr,
+        "max_drawdown": max_dd,
+        "exposure_pct": exposure_pct,
+        "annual_returns": annual_returns,
+        "n_trades": len(trades),
+        "start_nav": initial_capital,
+        "end_nav": nav,
+        "total_return": nav / initial_capital - 1.0,
+    }
+
+
 def generate_report(
     path_ledger: pd.DataFrame, trade_ledger: pd.DataFrame, paired: pd.DataFrame,
     events: list, start: int, end: int,
     primary_cost: int = 100, cost_scenarios: list[int] | None = None,
     bootstrap_runs: int = 2000, bootstrap_ci_level: float = 0.95,
     seed: int = 20260710, config_hash: str = "",
+    calendar: np.ndarray | None = None,
     **kwargs,
 ) -> str:
     if cost_scenarios is None:
@@ -2458,26 +2578,134 @@ def generate_report(
             lines.append(f"- {rule} > R0 占比：{(deltas.values > 0).mean():.1%}")
             lines.append("")
 
-    # Cost sensitivity
-    lines.append("## 4. 成本敏感性")
-    lines.append("")
-    header = "| 规则 |" + "|".join(f" {c}bp 均值 | {c}bp 正收益率(全部信号) " for c in cost_scenarios) + "|"
-    lines.append(header)
-    lines.append("|------|" + "|".join("------|------" for _ in cost_scenarios) + "|")
-    for rule_id in ["R0", "R1", "R2", "R3"]:
-        vals = []
-        for c in cost_scenarios:
-            if trade_ledger.empty or not {
-                "rule_id", "cost_bps", "status", "net_return"
-            }.issubset(trade_ledger.columns):
-                sub = pd.DataFrame(columns=["status", "net_return"])
-            else:
+    # ── Portfolio-level metrics (§3.5) ──────────────────────────────────
+    if calendar is not None and not trade_ledger.empty:
+        lines.append("")
+        lines.append("## 3.5 组合级绩效（日频资金曲线）")
+        lines.append("")
+        lines.append("事件等权均值 ≠ 组合收益。下表为等资金分配、重叠持仓按仓位均分")
+        lines.append("日收益后复利计算的组合级指标。")
+        lines.append("")
+        lines.append("| 指标 | R0 | R2 |")
+        lines.append("|------|----|----|")
+        pf_metrics = {}
+        for rid in ["R0", "R2"]:
+            pf_metrics[rid] = build_portfolio_curve(
+                trade_ledger, calendar, rule_id=rid, cost_bps=primary_cost,
+            )
+        r0_pf = pf_metrics.get("R0", {})
+        r2_pf = pf_metrics.get("R2", {})
+        lines.append(
+            f"| 交易笔数 | {r0_pf.get('n_trades', 0)} | {r2_pf.get('n_trades', 0)} |"
+        )
+        lines.append(
+            f"| 总收益 | {r0_pf.get('total_return', np.nan):.2%} "
+            f"| {r2_pf.get('total_return', np.nan):.2%} |"
+        )
+        lines.append(
+            f"| CAGR（年化） | {r0_pf.get('cagr', np.nan):.2%} "
+            f"| {r2_pf.get('cagr', np.nan):.2%} |"
+        )
+        lines.append(
+            f"| 最大回撤 | {r0_pf.get('max_drawdown', np.nan):.2%} "
+            f"| {r2_pf.get('max_drawdown', np.nan):.2%} |"
+        )
+        lines.append(
+            f"| 资金暴露率 | {r0_pf.get('exposure_pct', np.nan):.0f}% "
+            f"| {r2_pf.get('exposure_pct', np.nan):.0f}% |"
+        )
+        # Annual returns table
+        r0_ann = r0_pf.get("annual_returns", {})
+        r2_ann = r2_pf.get("annual_returns", {})
+        all_years = sorted(set(list(r0_ann.keys()) + list(r2_ann.keys())))
+        if all_years:
+            lines.append("")
+            lines.append("### 年度收益")
+            lines.append("")
+            lines.append("| 年份 | R0 | R2 |")
+            lines.append("|------|----|----|")
+            for yr in all_years:
+                r0_r = r0_ann.get(yr, np.nan)
+                r2_r = r2_ann.get(yr, np.nan)
+                r0_s = f"{r0_r:.2%}" if not np.isnan(r0_r) else "—"
+                r2_s = f"{r2_r:.2%}" if not np.isnan(r2_r) else "—"
+                lines.append(f"| {yr} | {r0_s} | {r2_s} |")
+        lines.append("")
+        lines.append("⚠️ 组合资金曲线为等权分配近似，非实际组合净值。")
+        lines.append("CAGR/回撤仅供研究参考，不能作为实盘预期。")
+
+    # ── Market regime breakdown (§3.6) ─────────────────────────────────
+    if not trade_ledger.empty and "market_regime" in trade_ledger.columns:
+        lines.append("")
+        lines.append("## 3.6 市场状态拆分（预登记探索假设，非确认结论）")
+        lines.append("")
+        lines.append(f"口径：{primary_cost}bp，仅 COMPLETED/STOPPED_OUT/TRUNCATED_EXIT/NO_TRADE。")
+        lines.append("")
+        lines.append("| 规则 | 状态 | 交易数 | 均值 | 中位数 | 胜率 |")
+        lines.append("|------|------|--------|------|--------|------|")
+        for rid in ["R0", "R1", "R2", "R3"]:
+            for regime in ["bull", "neutral"]:
                 sub = trade_ledger[
-                    (trade_ledger["rule_id"] == rule_id)
-                    & (trade_ledger["cost_bps"] == c)
-                ]
-            # Execution/data failures are unknown outcomes, not zero-return
-            # strategy decisions.  Only an explicit NO_TRADE maps to zero.
+                    (trade_ledger["rule_id"] == rid)
+                    & (trade_ledger["cost_bps"] == primary_cost)
+                    & (trade_ledger["market_regime"] == regime)
+                    & (trade_ledger["status"].isin(
+                        ["COMPLETED", "STOPPED_OUT", "NO_TRADE", "TRUNCATED_EXIT"]
+                    ))
+                ]["net_return"].copy()
+                sub.loc[
+                    (trade_ledger["status"] == "NO_TRADE")
+                    & (trade_ledger["rule_id"] == rid)
+                    & (trade_ledger["cost_bps"] == primary_cost)
+                    & (trade_ledger["market_regime"] == regime)
+                    & sub.isna()
+                ] = 0.0
+                sub = sub.dropna()
+                if len(sub) > 0:
+                    lines.append(
+                        f"| {rid} | {regime} | {len(sub)} "
+                        f"| {sub.mean():.4f} | {sub.median():.4f} "
+                        f"| {(sub > 0).mean():.1%} |"
+                    )
+                else:
+                    lines.append(f"| {rid} | {regime} | 0 | — | — | — |")
+        lines.append("")
+        lines.append("⚠️ 牛市/中性拆分是样本内观察，不能宣称统计显著。")
+        lines.append("正式确认需要前瞻 shadow 期的新样本。")
+
+    # Cost sensitivity
+    lines.append("## 4. 成本敏感性与交易统计")
+    lines.append("")
+    lines.append("口径：事件数 = 有效信号总数；可评估 = 有确定 P&L 的事件（排除 RIGHT_CENSORED/")
+    lines.append("UNTRADABLE/REJECTED/PARTIAL）；成交数 = 实际建立仓位的交易（排除 NO_TRADE）。")
+    lines.append("")
+    # Build summary row per rule: n_signals, n_evaluable, n_traded
+    rule_summary = {}
+    for rule_id in ["R0", "R1", "R2", "R3"]:
+        sub = trade_ledger[
+            (trade_ledger["rule_id"] == rule_id)
+            & (trade_ledger["cost_bps"] == primary_cost)
+        ] if not trade_ledger.empty else pd.DataFrame()
+        n_signals = len(sub)
+        evaluable = sub[sub["status"].isin(
+            ["COMPLETED", "STOPPED_OUT", "NO_TRADE", "TRUNCATED_EXIT"]
+        )] if not sub.empty else pd.DataFrame()
+        n_evaluable = len(evaluable)
+        n_traded = int((evaluable["status"] != "NO_TRADE").sum()) if not evaluable.empty else 0
+        rule_summary[rule_id] = (n_signals, n_evaluable, n_traded)
+
+    lines.append("| 规则 | 信号数 | 可评估数 | 实际交易数 |"
+                 + "|".join(f" {c}bp 均值 | {c}bp 正收益率(全部信号) " for c in cost_scenarios) + "|")
+    lines.append("|------|--------|----------|------------|"
+                 + "|".join("------|------" for _ in cost_scenarios) + "|")
+    for rule_id in ["R0", "R1", "R2", "R3"]:
+        ns, ne, nt = rule_summary[rule_id]
+        vals = [f" {ns} | {ne} | {nt} "]
+        for c in cost_scenarios:
+            sub = trade_ledger[
+                (trade_ledger["rule_id"] == rule_id)
+                & (trade_ledger["cost_bps"] == c)
+            ] if not trade_ledger.empty else pd.DataFrame(columns=["status", "net_return"])
             mask_valid = sub["status"].isin(
                 ["COMPLETED", "STOPPED_OUT", "NO_TRADE", "TRUNCATED_EXIT"]
             )
@@ -3561,6 +3789,7 @@ def main() -> int:
         bootstrap_ci_level=args.bootstrap_ci,
         seed=args.seed,
         config_hash=config_hash,
+        calendar=calendar,
         volume_features_list=volume_features_list if args.volume_diagnostics else [],
         firewall_report=firewall_report,
         hard_gate_verdict=hard_gate_verdict,
