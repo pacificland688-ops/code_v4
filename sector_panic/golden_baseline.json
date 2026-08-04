@@ -1,12 +1,12 @@
 {
   "schema": "sector_panic_golden_baseline.v2",
   "frozen_at": "2026-07-30T18:00:00+08:00",
-  "amended_at": "2026-08-04T10:19:53",
-  "amendment_reason": "2026-08-04 comprehensive review finalization: additionally require FetchManifest per-code spans to cover both requested boundaries across chunked fetches, reject Phase0 snapshots with blank/duplicate constituent keys or non-finite/negative weights, validate serialized overlap ratios at their four-decimal precision, and reject vague Golden amendment reasons. Phase0 was rebuilt from the current cache and remains B7 288/288 PASS. Frozen R0/R2 strategy parameters and forward boundary remain unchanged; Shadow Gate remains honestly BLOCKED_DATA_INTEGRITY pending exact local data for 20260730+.",
+  "amended_at": "2026-08-04T11:53:03",
+  "amendment_reason": "2026-08-04 round-7: P0-1 shadow n_outputs evaluator-set comparison + golden deadlock removed; P0-2 baseline git-tracked as trust anchor; gate golden enforcement moved to standalone verifier",
   "description": "Golden baseline v2 — source hashes updated after the 2026-08-02 audit fixes. Output artifact hashes remain from the original v1 freeze (photoresist results unchanged by infrastructure fixes).",
   "git": {
-    "commit": "97fe3df6b41127ba442d802352a21edf57fe039b",
-    "commit_message": "feat: portfolio NAV curves, market regime breakdown, signal/traded counts",
+    "commit": "54f54d3d72322b6a2aa27228edc3945294eecfa7",
+    "commit_message": "chore: track golden baseline as external trust anchor (P0-2)",
     "dirty_diff_sha256": "e14604cfe004920a032013ce7e4c360cf0a77bab6f57c20efed3a41eb96b8c4c",
     "dirty_files": [
       "data/parquet_cache.py",
@@ -31,7 +31,7 @@
     "configs/sector_panic/lithium_mining_universe_template.yaml": "f5f0665b6aca705e17358995d970c3123592765488755ba99b6ad92dd1a2c6c5",
     "configs/sector_panic/new_energy.yaml": "e572b5529856b6c0c53628e1049e69440234d94bb7722aa6f4c43bae812a15b2",
     "configs/sector_panic/nonferrous.yaml": "2faf6e4ee011c60b5f3c54b8b9b6dff17be00b7a911d3b6b46a9c8ff502da919",
-    "scripts/evaluate_photoresist_shadow_gates.py": "dc3e4ae4c7f3a89def0eda2fbdeaad07774d02b251b2c9d202638b694b1cf86b",
+    "scripts/evaluate_photoresist_shadow_gates.py": "f26288850752d6705727a1349cd5a2a06062f875b22cb24a6d1c9b9743e41b16",
     "scripts/fix_202001.py": "d19db181d546c55de76c762bc04f4f40ddde31cd219e2cda4b73b6fb1c95060a",
     "scripts/pull_monthly_weights.py": "8c945767295df43102ad73776135fb402e7d7f94c2675aad943a2effea498d03",
     "scripts/pull_phase0_data.py": "2eabd793ecf3b0cc55feedfb42d4e2552a40de57077b52ed7b65411dc689f8eb",
@@ -43,7 +43,7 @@
     "sector_panic/config.py": "478aca93b80a8be2a167d50a12d982a1e5eca081f884e028a4c2858ceaa000e1",
     "sector_panic/cost.py": "d84eba995416028f42ad94fb74128bb6f14426fc494a497bcaea9e210330d41b",
     "sector_panic/regime.py": "21996bbf8d604af455be3ff87ea50d10b20c57d6a0eb4e0a225cdf2026a21846",
-    "sector_panic/verify_golden.py": "56aa8f1eb887925dadd474bd7a231bc7858fb3be57ed3b2e4adf381f0d04323d",
+    "sector_panic/verify_golden.py": "94ec87167225b56f21e2117b37ee01790d8738726f1d2a382693f9fbdf90842a",
     "tests/test_day_gap_coverage.py": "05dbdaa4637798949c61d4ae0f1b5105f246269ef668a7a1296e749e2f3d9427",
     "tests/test_fetch_photoresist_adjusted_prices.py": "454c551e07c0e13ec7661b1ea17d8df946976ed201d98481b8cfa67dba59a604",
     "tests/test_index_cache_code_isolation.py": "5b01bc2b7f1ceba9aae10ce5578f0bc603b31a58e2d6aaefd8be920f6ca567e2",
@@ -65,11 +65,11 @@
     "data/universe.py": "780eea47b2324fe00f850910bb8b6b54a678a3c670dace87bc943f42137ffccc",
     "scripts/build_photoresist_panic_events.py": "2e693174d6e95363018a61dba260c3262ddf71731a3e820351d31166bf664571",
     "scripts/evaluate_photoresist_panic_path_rules.py": "07756e0f570914104c1f439b4d3bc4af3e1de8843aa08d95dc64083f5367abf2",
-    "scripts/evaluate_photoresist_shadow_gates.py": "dc3e4ae4c7f3a89def0eda2fbdeaad07774d02b251b2c9d202638b694b1cf86b",
+    "scripts/evaluate_photoresist_shadow_gates.py": "f26288850752d6705727a1349cd5a2a06062f875b22cb24a6d1c9b9743e41b16",
     "sector_panic/config.py": "478aca93b80a8be2a167d50a12d982a1e5eca081f884e028a4c2858ceaa000e1",
     "sector_panic/cost.py": "d84eba995416028f42ad94fb74128bb6f14426fc494a497bcaea9e210330d41b",
     "sector_panic/regime.py": "21996bbf8d604af455be3ff87ea50d10b20c57d6a0eb4e0a225cdf2026a21846",
-    "sector_panic/verify_golden.py": "56aa8f1eb887925dadd474bd7a231bc7858fb3be57ed3b2e4adf381f0d04323d"
+    "sector_panic/verify_golden.py": "94ec87167225b56f21e2117b37ee01790d8738726f1d2a382693f9fbdf90842a"
   },
   "contract_files": {
     "configs/photoresist_panic_shadow_gate_contract.json": "84370bde2fe60d2b32a3c9fed7fd33e322d3c699e80f1cead75e6c410f0bc8c6",
