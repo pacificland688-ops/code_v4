@@ -1,12 +1,12 @@
 {
   "schema": "sector_panic_golden_baseline.v2",
   "frozen_at": "2026-07-30T18:00:00+08:00",
-  "amended_at": "2026-08-04T11:53:36",
-  "amendment_reason": "2026-08-04 round-7: baseline excluded from dirty fingerprint (P0-2 git anchor consistent)",
+  "amended_at": "2026-08-04T11:54:22",
+  "amendment_reason": "2026-08-04: verifier baseline check uses git hash-object blob comparison (CRLF-safe)",
   "description": "Golden baseline v2 — source hashes updated after the 2026-08-02 audit fixes. Output artifact hashes remain from the original v1 freeze (photoresist results unchanged by infrastructure fixes).",
   "git": {
-    "commit": "fdc425daa31e3fed855a4c7d88fb22fe4a1e99ac",
-    "commit_message": "chore: final golden freeze after baseline commit",
+    "commit": "a9b6b6a10e09d42ed2e0345db03b9b6414374923",
+    "commit_message": "chore: golden freeze with baseline-excluded dirty state",
     "dirty_diff_sha256": "e14604cfe004920a032013ce7e4c360cf0a77bab6f57c20efed3a41eb96b8c4c",
     "dirty_files": [
       "data/parquet_cache.py",
@@ -43,7 +43,7 @@
     "sector_panic/config.py": "478aca93b80a8be2a167d50a12d982a1e5eca081f884e028a4c2858ceaa000e1",
     "sector_panic/cost.py": "d84eba995416028f42ad94fb74128bb6f14426fc494a497bcaea9e210330d41b",
     "sector_panic/regime.py": "21996bbf8d604af455be3ff87ea50d10b20c57d6a0eb4e0a225cdf2026a21846",
-    "sector_panic/verify_golden.py": "02cb2c3f211774149ceae04a3439fcc05a6e42db54d0bd9f00a30779c4876428",
+    "sector_panic/verify_golden.py": "901d1a78605af14bc355058af5872f687d2bc3e190b8404d1c4900c944194379",
     "tests/test_day_gap_coverage.py": "05dbdaa4637798949c61d4ae0f1b5105f246269ef668a7a1296e749e2f3d9427",
     "tests/test_fetch_photoresist_adjusted_prices.py": "454c551e07c0e13ec7661b1ea17d8df946976ed201d98481b8cfa67dba59a604",
     "tests/test_index_cache_code_isolation.py": "5b01bc2b7f1ceba9aae10ce5578f0bc603b31a58e2d6aaefd8be920f6ca567e2",
@@ -69,7 +69,7 @@
     "sector_panic/config.py": "478aca93b80a8be2a167d50a12d982a1e5eca081f884e028a4c2858ceaa000e1",
     "sector_panic/cost.py": "d84eba995416028f42ad94fb74128bb6f14426fc494a497bcaea9e210330d41b",
     "sector_panic/regime.py": "21996bbf8d604af455be3ff87ea50d10b20c57d6a0eb4e0a225cdf2026a21846",
-    "sector_panic/verify_golden.py": "02cb2c3f211774149ceae04a3439fcc05a6e42db54d0bd9f00a30779c4876428"
+    "sector_panic/verify_golden.py": "901d1a78605af14bc355058af5872f687d2bc3e190b8404d1c4900c944194379"
   },
   "contract_files": {
     "configs/photoresist_panic_shadow_gate_contract.json": "84370bde2fe60d2b32a3c9fed7fd33e322d3c699e80f1cead75e6c410f0bc8c6",
