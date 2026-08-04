@@ -1,12 +1,12 @@
 {
   "schema": "sector_panic_golden_baseline.v2",
   "frozen_at": "2026-07-30T18:00:00+08:00",
-  "amended_at": "2026-08-04T11:53:03",
-  "amendment_reason": "2026-08-04 round-7: P0-1 shadow n_outputs evaluator-set comparison + golden deadlock removed; P0-2 baseline git-tracked as trust anchor; gate golden enforcement moved to standalone verifier",
+  "amended_at": "2026-08-04T11:53:16",
+  "amendment_reason": "2026-08-04 round-7 final freeze: baseline committed; dirty state now excludes baseline itself",
   "description": "Golden baseline v2 — source hashes updated after the 2026-08-02 audit fixes. Output artifact hashes remain from the original v1 freeze (photoresist results unchanged by infrastructure fixes).",
   "git": {
-    "commit": "54f54d3d72322b6a2aa27228edc3945294eecfa7",
-    "commit_message": "chore: track golden baseline as external trust anchor (P0-2)",
+    "commit": "10eb47d526bd91ce412cf92c1d0fdf5121f7a24d",
+    "commit_message": "chore: re-freeze golden baseline after round-7 fixes (P0-1/P0-2)",
     "dirty_diff_sha256": "e14604cfe004920a032013ce7e4c360cf0a77bab6f57c20efed3a41eb96b8c4c",
     "dirty_files": [
       "data/parquet_cache.py",
