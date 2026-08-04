@@ -1,0 +1,122 @@
+{
+  "schema": "sector_panic_golden_baseline.v2",
+  "frozen_at": "2026-07-30T18:00:00+08:00",
+  "amended_at": "2026-08-04T10:19:53",
+  "amendment_reason": "2026-08-04 comprehensive review finalization: additionally require FetchManifest per-code spans to cover both requested boundaries across chunked fetches, reject Phase0 snapshots with blank/duplicate constituent keys or non-finite/negative weights, validate serialized overlap ratios at their four-decimal precision, and reject vague Golden amendment reasons. Phase0 was rebuilt from the current cache and remains B7 288/288 PASS. Frozen R0/R2 strategy parameters and forward boundary remain unchanged; Shadow Gate remains honestly BLOCKED_DATA_INTEGRITY pending exact local data for 20260730+.",
+  "description": "Golden baseline v2 — source hashes updated after the 2026-08-02 audit fixes. Output artifact hashes remain from the original v1 freeze (photoresist results unchanged by infrastructure fixes).",
+  "git": {
+    "commit": "97fe3df6b41127ba442d802352a21edf57fe039b",
+    "commit_message": "feat: portfolio NAV curves, market regime breakdown, signal/traded counts",
+    "dirty_diff_sha256": "e14604cfe004920a032013ce7e4c360cf0a77bab6f57c20efed3a41eb96b8c4c",
+    "dirty_files": [
+      "data/parquet_cache.py",
+      "data/tushare_client.py",
+      "data/universe.py",
+      "scripts/build_photoresist_panic_events.py",
+      "scripts/evaluate_photoresist_panic_path_rules.py",
+      "scripts/fetch_photoresist_data.py",
+      "scripts/run_photoresist_evaluation.ps1",
+      "scripts/validation_firewall.py",
+      "scripts/volume_features.py",
+      "tests/test_adj_factor_cache_strict.py",
+      "tests/test_cache_coverage.py",
+      "tests/test_index_daily_cache_strict.py",
+      "tests/test_limit_status_cache.py",
+      "tests/test_volume_enhancement.py"
+    ]
+  },
+  "untracked_files": {
+    "configs/photoresist_panic_shadow_gate_contract.json": "84370bde2fe60d2b32a3c9fed7fd33e322d3c699e80f1cead75e6c410f0bc8c6",
+    "configs/sector_panic/lithium_battery.yaml": "a58256286501d96fab864197a9183abb09f3a1abf214f7bac37d933d65261228",
+    "configs/sector_panic/lithium_mining_universe_template.yaml": "f5f0665b6aca705e17358995d970c3123592765488755ba99b6ad92dd1a2c6c5",
+    "configs/sector_panic/new_energy.yaml": "e572b5529856b6c0c53628e1049e69440234d94bb7722aa6f4c43bae812a15b2",
+    "configs/sector_panic/nonferrous.yaml": "2faf6e4ee011c60b5f3c54b8b9b6dff17be00b7a911d3b6b46a9c8ff502da919",
+    "scripts/evaluate_photoresist_shadow_gates.py": "dc3e4ae4c7f3a89def0eda2fbdeaad07774d02b251b2c9d202638b694b1cf86b",
+    "scripts/fix_202001.py": "d19db181d546c55de76c762bc04f4f40ddde31cd219e2cda4b73b6fb1c95060a",
+    "scripts/pull_monthly_weights.py": "8c945767295df43102ad73776135fb402e7d7f94c2675aad943a2effea498d03",
+    "scripts/pull_phase0_data.py": "2eabd793ecf3b0cc55feedfb42d4e2552a40de57077b52ed7b65411dc689f8eb",
+    "scripts/rebuild_feasibility_report.py": "729143ab77818a9a3d77f7c9b3764e9d3507eedf3201842e87da7244f4002607",
+    "scripts/rebuild_index_weight_coverage.py": "8b679be97d727f317896a1a5f62bcd18bda9f51626dbfaf6d5928698691bd151",
+    "scripts/rebuild_monthly_overlap.py": "e317951476885f91c333d456d4db5249e4b39bad1c397f51e953e2c8e7d82093",
+    "scripts/run_photoresist_shadow_evaluation.ps1": "3402332350903f7269ce578eaef481c8e6b403aaf6b872b80ad34b4759c04d6c",
+    "sector_panic/__init__.py": "dbab3780043ab4c9900ef225416a88c1682d06910c7af8bceb37954309e239a1",
+    "sector_panic/config.py": "478aca93b80a8be2a167d50a12d982a1e5eca081f884e028a4c2858ceaa000e1",
+    "sector_panic/cost.py": "d84eba995416028f42ad94fb74128bb6f14426fc494a497bcaea9e210330d41b",
+    "sector_panic/regime.py": "21996bbf8d604af455be3ff87ea50d10b20c57d6a0eb4e0a225cdf2026a21846",
+    "sector_panic/verify_golden.py": "56aa8f1eb887925dadd474bd7a231bc7858fb3be57ed3b2e4adf381f0d04323d",
+    "tests/test_day_gap_coverage.py": "05dbdaa4637798949c61d4ae0f1b5105f246269ef668a7a1296e749e2f3d9427",
+    "tests/test_fetch_photoresist_adjusted_prices.py": "454c551e07c0e13ec7661b1ea17d8df946976ed201d98481b8cfa67dba59a604",
+    "tests/test_index_cache_code_isolation.py": "5b01bc2b7f1ceba9aae10ce5578f0bc603b31a58e2d6aaefd8be920f6ca567e2",
+    "tests/test_index_weight_completeness.py": "66d55c203d8fc0999fd264764c85a9cbf05f16297c90ef86ab097d56f2667797",
+    "tests/test_per_code_coverage.py": "1feab65cfe9db0635cd451142df3148f5c743fe1e5693339bad65547822c2b0e",
+    "tests/test_phase0_report_validation.py": "c79b6d46b27aa40b614ed16b0fc47ef21c779773f570f3e0e88e4d8f896be8e9",
+    "tests/test_photoresist_loader_date_boundaries.py": "4404161f8f81eb1c140d52f5386884e8304be6c2fa5ae91dc163286f27de6071",
+    "tests/test_photoresist_portfolio_shadow.py": "4d2b57507c598e443e60429fd27155ce4cf805986954370cf0950d9c07cb87f7",
+    "tests/test_photoresist_shadow_gates.py": "c5cdb3f3ceec80d9ab7f2988dfc00c25d2c261388f46da5bcb2e5b50a49987d0",
+    "tests/test_sector_panic_config.py": "00439e1d865d3179e44e93463c14c4efe7e3f6fc4d599721b7b69979d1908d48",
+    "tests/test_sector_panic_cost.py": "02a9c0edadc9fb210ee6a104f7c1e7986bf525a7c9d924f154da77b7920b577f",
+    "tests/test_sector_panic_regime.py": "9219d57453d050ea6642fed6412aa81ff4e830d1a10e57c94fdd894650e3f138",
+    "tests/test_validation_firewall_registry.py": "a15b89baf17c153db0c587cdeb66f12bb010a729183342cf6ebbae9d6f4bddcc",
+    "tests/test_verify_golden.py": "5de67ce0faec1fa721ea6972d521f3444f4eecb2c8f5c88fcc3e125f3bed8eb0"
+  },
+  "source_files": {
+    "data/parquet_cache.py": "51ed183fd3cce1d74e31cd7f615f3c43db556f2f5d07a5c8c981c4259330ada1",
+    "data/tushare_client.py": "d005f01e4d5bcdc3358b65b8e90d909350a150a6c04572f4ecf81cb2e36c4b54",
+    "data/universe.py": "780eea47b2324fe00f850910bb8b6b54a678a3c670dace87bc943f42137ffccc",
+    "scripts/build_photoresist_panic_events.py": "2e693174d6e95363018a61dba260c3262ddf71731a3e820351d31166bf664571",
+    "scripts/evaluate_photoresist_panic_path_rules.py": "07756e0f570914104c1f439b4d3bc4af3e1de8843aa08d95dc64083f5367abf2",
+    "scripts/evaluate_photoresist_shadow_gates.py": "dc3e4ae4c7f3a89def0eda2fbdeaad07774d02b251b2c9d202638b694b1cf86b",
+    "sector_panic/config.py": "478aca93b80a8be2a167d50a12d982a1e5eca081f884e028a4c2858ceaa000e1",
+    "sector_panic/cost.py": "d84eba995416028f42ad94fb74128bb6f14426fc494a497bcaea9e210330d41b",
+    "sector_panic/regime.py": "21996bbf8d604af455be3ff87ea50d10b20c57d6a0eb4e0a225cdf2026a21846",
+    "sector_panic/verify_golden.py": "56aa8f1eb887925dadd474bd7a231bc7858fb3be57ed3b2e4adf381f0d04323d"
+  },
+  "contract_files": {
+    "configs/photoresist_panic_shadow_gate_contract.json": "84370bde2fe60d2b32a3c9fed7fd33e322d3c699e80f1cead75e6c410f0bc8c6",
+    "outputs/analysis/photoresist_panic/photoresist_shadow_contract.json": "1f904813bcda885fdcfbc3ccb8d2b211e55a010e8756e121f8eaab8f30e894fe"
+  },
+  "outputs_historical": {
+    "outputs/analysis/photoresist_panic/photoresist_event_path_ledger.csv": "5057e7a99bc79e18e372a01a37d5e78c5f7ba1381bd6dd967067de4914b22490",
+    "outputs/analysis/photoresist_panic/photoresist_path_rules_report.md": "cd4679e9475272b1f47a3c7e0faba01c62e2edc2e72c5393a11289549f69c9ec",
+    "outputs/analysis/photoresist_panic/photoresist_portfolio_daily_nav.csv": "1a36aabe4d1a9cefdf475901b1101933b9205dc89c5680467ce1f20b5333eaea",
+    "outputs/analysis/photoresist_panic/photoresist_rule_trade_ledger.csv": "3fd3b32a6c49b58b8b717ce7a97d7b89f2e120a99b1281de98d23fe3e69e26d5"
+  },
+  "outputs_shadow": {
+    "outputs/analysis/photoresist_panic_shadow/photoresist_portfolio_daily_nav.csv": "30fb233a04ca8f5beab218f798140a8828e3dd8b359cc0e112c42373345f6b00",
+    "outputs/analysis/photoresist_panic_shadow/photoresist_rule_trade_ledger.csv": "52dfd844a8a964c2f5906069944bedb0bc5003b79528b96b38ebdccaa9e1fa07",
+    "outputs/analysis/photoresist_panic_shadow/photoresist_shadow_gate_verdict.json": "b9855e588f9d9d76b3eb7e37c8733eb9df1382b5b50beeb2dbee213d73dc0775",
+    "outputs/analysis/photoresist_panic_shadow/photoresist_shadow_outcomes.csv": "52dfd844a8a964c2f5906069944bedb0bc5003b79528b96b38ebdccaa9e1fa07"
+  },
+  "path_manifest": {
+    "outputs/analysis/photoresist_panic/photoresist_path_rules_manifest.json": "6fe45d26cb5795a1315f2f7fcc355f8b016afe03b1f8084da9af33a86904145f",
+    "outputs/analysis/photoresist_panic_shadow/photoresist_path_rules_manifest.json": "7adae00333cf3b5d08d5673739472f1d0c5e95b3c7d52de36c08ae65bc16dda7"
+  },
+  "upstream_manifest": {
+    "outputs/analysis/photoresist_panic/photoresist_panic_manifest.json": "9e8a3210b22ffcb27ded732b28148597901d8c4b978bd61e8171753da68798ed",
+    "outputs/analysis/photoresist_panic_shadow/photoresist_panic_manifest.json": "e5e74bcbf853e536521324ab1dcee132a59641a75d409888c152ad2872df070f"
+  },
+  "success_marker": {
+    "outputs/analysis/photoresist_panic/_SUCCESS": "bf0c1e02977886f7a949da2ddf4293e271bcc53009cff7b9d7e808c85bdbd259",
+    "outputs/analysis/photoresist_panic_shadow/_SUCCESS": "4e8342441aa4f76a9797c3eb851e5227834236f93867821d050c95c831445ae4"
+  },
+  "phase0_artifacts": {
+    "outputs/analysis/sector_panic/data_feasibility_report_v3.md": "96ef42bd48f89f274c6bf65940a911a7f7495ed01362ef730223d428d8f9afb0",
+    "outputs/analysis/sector_panic/index_weight_monthly_coverage.csv": "203aa2681e4a6b4df2014661b47fa41d82c6f8c3590f05d8194cbd37671e96d5",
+    "outputs/analysis/sector_panic/monthly_overlap_matrix.csv": "b8a73753a32a870fbf2811c21389c4290e794ab98507660b921049cb9efd3f52"
+  },
+  "phase0_findings": {
+    "status": "REBUILD_COMPLETE_PARTIAL",
+    "reason": "2026-08-03: monthly index_weight coverage rebuilt 288/288 (B7 PASS, machine-verified by scripts/rebuild_index_weight_coverage.py); monthly overlap matrix rebuilt 288 rows with single-snapshot validation (B13: Jaccard/smaller-coverage/weight-overlap PASS, signal co-occurrence pending Phase 4); adj_factor/prices_adj full historical coverage restored (296 codes complete 2017-2024). Lithium mining manual pool still pending evidence fields.",
+    "b7": "PASS_288_288",
+    "b13": "PARTIAL_3_of_4_metrics",
+    "adj_factor_historical": "RESTORED",
+    "confirmed_indices": {
+      "nonferrous": "000819.SH",
+      "new_energy": "000941.CSI",
+      "lithium_battery": "931555.CSI",
+      "lithium_mining": "manual_curated_pool"
+    },
+    "index_member_api": "UNAVAILABLE",
+    "index_weight_api": "AVAILABLE_monthly"
+  }
+}
