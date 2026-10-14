@@ -12,8 +12,10 @@ from typing import Any
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
-SCHEMA = "momentum_pullback.engineering.v0_2.r2"
-CHECKPOINT_SCHEMA = "momentum_pullback.checkpoint.v2"
+SCHEMA = "momentum_pullback.engineering.v0_2.r3"
+CHECKPOINT_SCHEMA = "momentum_pullback.checkpoint.v3"
+LEGACY_CONTRACT_SCHEMAS = {"momentum_pullback.engineering.v0_2.r2"}
+LEGACY_CHECKPOINT_SCHEMAS = {"momentum_pullback.checkpoint.v2"}
 
 
 class GateError(ValueError):
@@ -89,6 +91,8 @@ class Contract:
 
 def validate_contract(payload: dict[str, Any], *, root: Path = ROOT, verify_documents: bool = True) -> Contract:
     required = {"schema", "strategy_id", "status", "parameter_status", "freeze_timestamp", "outcomes_enabled", "market", "features", "events", "matching", "orders", "study", "scope", "sources", "documents"}
+    if payload.get("schema") in LEGACY_CONTRACT_SCHEMAS:
+        raise GateError("CONTRACT_NOT_UPGRADABLE", payload.get("schema"))
     if set(payload) != required or payload.get("schema") != SCHEMA:
         raise GateError("CONTRACT_SCHEMA_INVALID")
     if any(not isinstance(payload[key], dict) for key in ["market", "features", "events", "matching", "orders", "study", "scope", "sources"]) or not isinstance(payload["documents"], list):
@@ -103,13 +107,19 @@ def validate_contract(payload: dict[str, Any], *, root: Path = ROOT, verify_docu
             raise GateError("FEATURE_WINDOW_INVALID", key)
     if features.get("ema_adjust") is not False or features.get("adv_window") != "MARKET_SESSIONS_INCLUDING_SIGNAL_DAY" or features.get("halt_amount") != "VERIFIED_FULL_DAY_ZERO_ONLY":
         raise GateError("FEATURE_CLOCK_AMBIGUOUS")
+    if features.get("feature_ready") != "MIN_VALID_OBSERVATIONS_KNOWN_HISTORY_EVALUABLE_EMA" or features.get("reset_ready") != "FEATURE_READY_PRICE_KNOWN_EMA_SEEDED_BEFORE_BAR":
+        raise GateError("FEATURE_READY_RULE_AMBIGUOUS")
+    if features.get("rank_roster") != "CERTIFIED_PIT_DAILY_ROSTER" or features.get("rank_execution") != "ONE_CROSS_SECTION_AFTER_REQUIRED_NAMES":
+        raise GateError("RANK_ROSTER_RULE_AMBIGUOUS")
     if features.get("rank_denominator") != "ALL_PIT_ELIGIBLE_WITH_KNOWN_WARMUP" or features.get("rank_ties") != "MOMENTUM_DESC_CODE_ASC" or features.get("covariate_percentile") != "AVERAGE_RANK_OVER_SAME_DENOMINATOR":
         raise GateError("RANK_DENOMINATOR_AMBIGUOUS")
     fraction = features.get("top_fraction")
     if type(fraction) not in (int, float) or not math.isfinite(fraction) or not 0 < fraction <= 1:
         raise GateError("TOP_FRACTION_INVALID")
     events = payload["events"]
-    if events.get("reset") != "VALID_CLOSE_LE_EMA50" or events.get("same_day_reclaim") is not True or events.get("primary_first_window") != "ROOT_PLUS_1_THROUGH_WAIT_LIMIT" or events.get("unknown_root") != "PERSIST_UNTIL_VALID_RESET_OR_HISTORY_REPLAY":
+    if events.get("reset") != "OBSERVED_CLOSE_LE_EMA50_WHEN_RESET_READY" or events.get("pre_ready_reset") != "NOT_A_SEED" or events.get("identity_seed") != "VERIFIED_CHECKPOINT_OR_POST_READY_RESET":
+        raise GateError("EVENT_IDENTITY_AMBIGUOUS")
+    if events.get("same_day_reclaim") is not True or events.get("primary_first_window") != "ROOT_PLUS_1_THROUGH_WAIT_LIMIT" or events.get("unknown_root") != "PERSIST_UNTIL_VALID_RESET_OR_HISTORY_REPLAY":
         raise GateError("EVENT_IDENTITY_AMBIGUOUS")
     if type(events.get("wait_sessions")) is not int or events["wait_sessions"] < 1:
         raise GateError("WAIT_WINDOW_INVALID")
@@ -158,6 +168,8 @@ def checkpoint(state: Any, *, contract: Contract, code_hash: str, feature_origin
 
 
 def restore_checkpoint(saved: dict[str, Any], *, contract: Contract, code_hash: str, feature_origin: int, processed_cutoff: int, history_hash: str) -> Any:
+    if saved.get("schema") in LEGACY_CHECKPOINT_SCHEMAS:
+        raise GateError("CHECKPOINT_NOT_UPGRADABLE", saved.get("schema"))
     expected = checkpoint(None, contract=contract, code_hash=code_hash, feature_origin=feature_origin, processed_cutoff=processed_cutoff, history_hash=history_hash)
     for key in expected:
         if key not in {"state", "state_hash"} and saved.get(key) != expected[key]:

@@ -68,6 +68,15 @@ def checked_available(frame: pd.DataFrame, cutoff_column: str, available_column:
     return cutoff.notna() & available.notna() & available.le(cutoff)
 
 
+def validate_calendar_binding(claimed: list[int], certified: list[int]) -> None:
+    """A snapshot calendar is complete only when it matches the external certificate."""
+    if list(claimed) != list(certified):
+        claimed_set, certified_set = set(claimed), set(certified)
+        missing = [date for date in certified if date not in claimed_set]
+        extra = [date for date in claimed if date not in certified_set]
+        raise GateError("CERTIFIED_CALENDAR_MISMATCH", {"missing_count": len(missing), "missing": missing[:10], "extra_count": len(extra), "extra": extra[:10]})
+
+
 def validate_normalized_panel(panel: pd.DataFrame, calendar: list[int]) -> None:
     """Validate the complete declared grid; missing facts remain explicit unknowns."""
     unique_keys(panel, KEYS, "normalized_observations")

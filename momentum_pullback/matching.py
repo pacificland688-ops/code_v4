@@ -6,6 +6,7 @@ import pandas as pd
 
 from momentum_pullback.contracts import Contract, GateError
 from momentum_pullback.data_adapter import unique_keys
+from momentum_pullback.features import average_rank_percentiles
 
 MATCH_COLUMNS = ["event_id", "signal_date", "event_code", "control_code", "control_rank", "distance", "contract_hash"]
 
@@ -50,7 +51,7 @@ def lock_matches(events: pd.DataFrame, features: pd.DataFrame, observations: pd.
         if denominator.industry_code.isna().any() or industry_times.isna().any() or basic_times.isna().any() or (industry_times > cutoff).any() or (basic_times > cutoff).any():
             fail("MATCH_INFORMATION_UNAVAILABLE_AT_CUTOFF")
             continue
-        percentages = denominator[covariates].rank(method="average", pct=True)
+        percentages = average_rank_percentiles(denominator, covariates)
         own = denominator[denominator.ts_code.eq(event.ts_code)]
         if len(own) != 1:
             fail("EVENT_NOT_IN_VERIFIED_DENOMINATOR")

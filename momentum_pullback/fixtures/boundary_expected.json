@@ -1,0 +1,37 @@
+{
+  "authority": "HAND_WRITTEN_BOUNDARY_EXPECTATIONS",
+  "note": "Outcomes below were stated before the implementation was accepted. Paths are synthetic clocks, not market evidence.",
+  "WARM-01": {
+    "id": "WARM-01",
+    "seed_reset_ready": false,
+    "valid_reset_actions": 0,
+    "first_candidate_events": 0,
+    "identity_known_any": false,
+    "terminal_reason": "LEFT_CENSORED",
+    "status": "PARTIAL_IDENTITY_UNEVALUABLE"
+  },
+  "WARM-02": {
+    "id": "WARM-02",
+    "pre_ready_action": "WARMUP_RESET_IGNORED",
+    "pre_ready_is_seed": false,
+    "post_ready_action": "VALID_RESET",
+    "touch_no": 1,
+    "event_status": "FIRST_CANDIDATE",
+    "event_count": 1
+  },
+  "POOL-01": {
+    "id": "POOL-01",
+    "error": "REQUIRED_MEMBER_MISSING",
+    "forbidden_status": "KNOWN_INELIGIBLE"
+  },
+  "POOL-02": {
+    "id": "POOL-02",
+    "batch_error": "REQUIRED_MEMBER_MISSING",
+    "single_ranking": true
+  },
+  "CAL-01": {
+    "id": "CAL-01",
+    "missing_session_error": "FEATURE_CALENDAR_GAP",
+    "short_calendar_error": "CERTIFIED_CALENDAR_MISMATCH"
+  }
+}

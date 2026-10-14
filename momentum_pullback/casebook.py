@@ -32,6 +32,15 @@ def hand_panel() -> tuple[pd.DataFrame, list[int]]:
     return pd.DataFrame(rows), dates
 
 
+def declare_synthetic_roster(panel: pd.DataFrame) -> pd.DataFrame:
+    """Explicit test declaration. The feature engine must not invent this from rows."""
+    roster = panel[["trade_date", "ts_code"]].drop_duplicates().copy()
+    roster["ts_code"] = roster["ts_code"].astype(str)
+    roster["required_for_rank"] = True
+    roster["track_identity"] = True
+    return roster.reset_index(drop=True)
+
+
 def hand_contract(contract: Contract) -> Contract:
     payload = contract.payload
     _, dates = hand_panel()

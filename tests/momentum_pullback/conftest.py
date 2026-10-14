@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from momentum_pullback.casebook import hand_contract, hand_panel
+from momentum_pullback.casebook import declare_synthetic_roster, hand_contract, hand_panel
 from momentum_pullback.contracts import ROOT, load_contract
 from momentum_pullback.features import build_features
 
@@ -20,4 +20,4 @@ def hand_draft(base_contract):
 @pytest.fixture(scope="session")
 def hand_features(hand_draft):
     panel, calendar = hand_panel()
-    return build_features(panel, calendar, hand_draft)
+    return build_features(panel, calendar, hand_draft, roster=declare_synthetic_roster(panel))

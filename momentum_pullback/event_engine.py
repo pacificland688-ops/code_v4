@@ -34,7 +34,7 @@ def _finite(*values) -> bool:
 
 
 def build_events(features: pd.DataFrame, contract: Contract, *, states: dict | None = None) -> dict:
-    required = set(KEYS + ["price_known", "adj_low", "adj_close", "ema21", "ema50", "prior_high20", "strong_status", "market_index", "signal_cutoff", "contract_hash"])
+    required = set(KEYS + ["price_known", "feature_ready", "reset_ready", "adj_low", "adj_close", "ema21", "ema50", "prior_high20", "strong_status", "market_index", "signal_cutoff", "contract_hash"])
     if not required.issubset(features) or features.empty:
         raise GateError("EVENT_INPUT_UNEVALUABLE", sorted(required - set(features)))
     unique_keys(features, KEYS, "features")
@@ -44,6 +44,11 @@ def build_events(features: pd.DataFrame, contract: Contract, *, states: dict | N
         raise GateError("STRONG_STATUS_INVALID")
     if not features.price_known.map(lambda value: isinstance(value, (bool, np.bool_))).all():
         raise GateError("PRICE_KNOWN_STATE_INVALID")
+    for column in ["feature_ready", "reset_ready"]:
+        if not features[column].map(lambda value: isinstance(value, (bool, np.bool_))).all():
+            raise GateError("READY_STATE_INVALID", column)
+    if (features.reset_ready & ~features.feature_ready).any():
+        raise GateError("RESET_READY_WITHOUT_FEATURE_READY")
     known_rows = features.loc[features.price_known, ["adj_low", "adj_close", "ema21", "ema50"]]
     if not np.isfinite(known_rows.to_numpy(dtype=float)).all() or (known_rows <= 0).any().any():
         raise GateError("KNOWN_PRICE_FEATURE_INVALID")
@@ -77,6 +82,9 @@ def build_events(features: pd.DataFrame, contract: Contract, *, states: dict | N
                 state.identity_known = False
                 state.uncertainty_reason = "PRICE_PATH_UNKNOWN"
                 action = "IDENTITY_UNKNOWN"
+        elif not bool(row.reset_ready):
+            # Warmup equality and pre-ready dips do not seed a later identity.
+            action = "WARMUP_RESET_IGNORED" if row.adj_close <= row.ema50 else "WARMUP_MONITOR"
         elif row.adj_close <= row.ema50:
             state.identity_known = True
             state.reset_observed_at = date

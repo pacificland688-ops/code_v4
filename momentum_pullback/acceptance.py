@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from momentum_pullback.casebook import hand_contract, hand_panel
+from momentum_pullback.casebook import declare_synthetic_roster, hand_contract, hand_panel
 from momentum_pullback.contracts import ROOT, Contract, GateError, checkpoint, file_hash, restore_checkpoint, write_json
 from momentum_pullback.data_adapter import frame_hash, input_history_hash
 from momentum_pullback.event_engine import build_events
@@ -22,19 +22,20 @@ def run_hand_acceptance(contract: Contract, *, root: Path = ROOT) -> tuple[Path,
     expected = json.loads(oracle_path.read_text(encoding="utf-8"))
     inputs = [oracle_path] + ([Path(contract.source_path)] if contract.source_path else [])
     folder, manifest = create_run(draft, "hand_acceptance", inputs, root=root, logical_inputs={"normalized_panel_hash": frame_hash(panel), "calendar": calendar, "parent_contract_hash": contract.hash, "synthetic": True})
-    features = build_features(panel, calendar, draft)
+    roster = declare_synthetic_roster(panel)
+    features = build_features(panel, calendar, draft, roster=roster)
     full = build_events(features, draft)
     events = full["events"]
     actual = events[list(expected["events"][0])].to_dict("records")
     if actual != expected["events"] or len(full["roots"]) != expected["roots"] or full["status"] != "EVENTS_BUILT":
         raise GateError("HAND_EVENT_ORACLE_MISMATCH", actual)
-    prefix_feature_result = build_features(panel[panel.trade_date.le(20171229)], calendar, draft, return_states=True)
+    prefix_feature_result = build_features(panel[panel.trade_date.le(20171229)], calendar, draft, roster=roster, return_states=True)
     prefix = prefix_feature_result["features"]
     early = build_events(prefix, draft)
     consumed = input_history_hash(panel, calendar, 20171229)
     saved = checkpoint({"event_states": early["states"], "feature_states": prefix_feature_result["states"]}, contract=draft, code_hash=manifest["code_hash"], feature_origin=calendar[0], processed_cutoff=20171229, history_hash=consumed)
     state = restore_checkpoint(saved, contract=draft, code_hash=manifest["code_hash"], feature_origin=calendar[0], processed_cutoff=20171229, history_hash=input_history_hash(panel, calendar, 20171229))
-    resumed_features = build_features(panel[panel.trade_date.gt(20171229)], calendar, draft, states=state["feature_states"])
+    resumed_features = build_features(panel[panel.trade_date.gt(20171229)], calendar, draft, roster=roster, states=state["feature_states"])
     pd.testing.assert_frame_equal(features[features.trade_date.gt(20171229)].reset_index(drop=True), resumed_features)
     resumed = build_events(resumed_features, draft, states=state["event_states"])
     pd.testing.assert_frame_equal(events, resumed["events"])

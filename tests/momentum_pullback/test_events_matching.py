@@ -20,7 +20,7 @@ def manual_path(contract, dates=None):
     rows = []
     for index, date in enumerate(dates):
         day = pd.to_datetime(str(date), format="%Y%m%d").strftime("%Y-%m-%d")
-        rows.append({"ts_code": "X", "trade_date": date, "market_index": index, "price_known": True, "price_status": "TRADED", "verified_halt_known": False, "adj_close": 12.0, "adj_low": 11.8, "ema21": 11.5, "ema50": 10.0, "prior_high20": 20.0, "strong_status": "KNOWN_ELIGIBLE", "signal_cutoff": f"{day}T18:00:00+08:00", "contract_hash": draft.hash})
+        rows.append({"ts_code": "X", "trade_date": date, "market_index": index, "price_known": True, "feature_ready": True, "reset_ready": True, "price_status": "TRADED", "verified_halt_known": False, "adj_close": 12.0, "adj_low": 11.8, "ema21": 11.5, "ema50": 10.0, "prior_high20": 20.0, "strong_status": "KNOWN_ELIGIBLE", "signal_cutoff": f"{day}T18:00:00+08:00", "contract_hash": draft.hash})
     frame = pd.DataFrame(rows)
     frame.loc[0, ["adj_close", "adj_low", "ema21"]] = [10, 10, 10]
     frame.loc[1, "prior_high20"] = 11.0

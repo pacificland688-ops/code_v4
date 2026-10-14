@@ -1,5 +1,5 @@
 # P0-P2 draft: no labels or returns; content hashes are part of run identity.
-schema: momentum_pullback.engineering.v0_2.r2
+schema: momentum_pullback.engineering.v0_2.r3
 strategy_id: martin_luk_pullback_ashare_v0_2
 status: DRAFT
 parameter_status: PROPOSED
@@ -18,15 +18,21 @@ features:
   prior_high_observations: 20
   volatility_intervals: 20
   min_price_observations: 150
+  feature_ready: MIN_VALID_OBSERVATIONS_KNOWN_HISTORY_EVALUABLE_EMA
+  reset_ready: FEATURE_READY_PRICE_KNOWN_EMA_SEEDED_BEFORE_BAR
   adv_market_sessions: 20
   adv_window: MARKET_SESSIONS_INCLUDING_SIGNAL_DAY
   halt_amount: VERIFIED_FULL_DAY_ZERO_ONLY
   rank_denominator: ALL_PIT_ELIGIBLE_WITH_KNOWN_WARMUP
+  rank_roster: CERTIFIED_PIT_DAILY_ROSTER
+  rank_execution: ONE_CROSS_SECTION_AFTER_REQUIRED_NAMES
   rank_ties: MOMENTUM_DESC_CODE_ASC
   covariate_percentile: AVERAGE_RANK_OVER_SAME_DENOMINATOR
   top_fraction: 0.2
 events:
-  reset: VALID_CLOSE_LE_EMA50
+  reset: OBSERVED_CLOSE_LE_EMA50_WHEN_RESET_READY
+  pre_ready_reset: NOT_A_SEED
+  identity_seed: VERIFIED_CHECKPOINT_OR_POST_READY_RESET
   same_day_reclaim: true
   wait_sessions: 20
   primary_first_window: ROOT_PLUS_1_THROUGH_WAIT_LIMIT
@@ -91,3 +97,5 @@ documents:
   sha256: 7469bfbe060f9bf65641034578b4fbe4ff5fe816eb5eebda615e9d369effde67
 - path: momentum_pullback/engineering_contract_v0_2_r2.md
   sha256: 4d3de319980f4afdca1e063cd52b6f9f0b3b8f10b551d3ea0fa7e606084770f5
+- path: momentum_pullback/engineering_contract_v0_2_r3.md
+  sha256: 7b80c8ca10f132a1f2d7dbd6301e5a99e1ea0327eb814d9c1f24741c5826227d
