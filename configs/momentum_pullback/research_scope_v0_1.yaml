@@ -1,0 +1,114 @@
+# Research manifest only. No existing strategy runner consumes this file.
+schema: momentum_pullback.research_scope.v0_1
+strategy_id: martin_luk_pullback_ashare_v0_1
+name: Martin Luk-inspired A-share first-pullback continuation
+started_on: 2026-10-13
+analysis_date: 2026-10-14
+stage: HYPOTHESIS_ONLY
+parameter_status: PROPOSED_NOT_FROZEN
+freeze_timestamp: null
+runtime_config: false
+can_run_backtest: false
+can_claim_oos: false
+live_trading_authority: NONE
+
+market:
+  asset_class: A_SHARE_COMMON_STOCK
+  direction: LONG_ONLY
+  leverage: 1.0
+  frequency: DAILY_SIGNAL
+  pilot_universe: CSI300_POINT_IN_TIME
+  exclude_st: true
+  minimum_history_sessions: 150
+  order_units: EXCHANGE_AND_DATE_SPECIFIC
+
+hypothesis:
+  prediction_target: NET_TREND_CONTINUATION_AFTER_FIRST_PULLBACK
+  evaluation_horizons_sessions: [5, 10, 20]
+  primary_comparison: MATCHED_MOMENTUM_CONTROLS
+  claimed_expected_annual_return: null
+
+proposed_baseline:
+  adjusted_prices_for_features: true
+  ema_adjust: false
+  momentum_lookback: 63
+  momentum_min_percentile: 0.8
+  trend_ema_span: 50
+  support_ema_span: 21
+  support_slope_lag: 5
+  anchor_breakout_lookback: 20
+  anchor_rule: CLOSE_ABOVE_PRIOR_WINDOW_HIGH
+  anchor_available_after: ANCHOR_SESSION_CLOSE
+  reset_anchor_on_new_high_within_episode: false
+  expire_unfilled_episode_after_sessions: 20
+  first_touch_rule: ADJ_LOW_LE_SUPPORT_EMA
+  first_touch_consumed_on_failure: true
+  reclaim_rule: ADJ_CLOSE_GT_SUPPORT_EMA
+  signal_available_after: SIGNAL_SESSION_CLOSE
+  entry_attempt_session_offset: 1
+  entry_price_model: RAW_OPEN_PLUS_SLIPPAGE_STYLIZED
+  entry_rejected_if_open_below_initial_stop: true
+  entry_requires_unchanged_adjustment_factor_since_signal: true
+  initial_stop_rule: SIGNAL_DAY_RAW_LOW
+  exit_trigger_rule: CLOSE_BELOW_INITIAL_STOP_OR_SUPPORT_EMA
+  exit_execution: NEXT_TRADABLE_OPEN_AFTER_CLOSE_TRIGGER
+  buy_day_sell_allowed: false
+  maximum_holding_sessions: 20
+  intraday_stop_fill_assumed: false
+
+proposed_portfolio:
+  illustrative_initial_nav_cny: 1000000
+  risk_budget_per_trade_nav_fraction: 0.0025
+  maximum_position_fraction: 0.10
+  maximum_positions: 8
+  maximum_gross_exposure_fraction: 0.80
+  maximum_sector_fraction: 0.30
+  sector_cap_requires_verified_pit_classification: true
+  minimum_adv20_cny: 100000000
+  maximum_order_fraction_of_lagged_adv20: 0.01
+  risk_sizing_floor_loss_fraction: 0.08
+  risk_sizing_floor_status: SCENARIO_ASSUMPTION_NOT_LOSS_GUARANTEE
+  insufficient_data_action: BLOCK_RELEVANT_EVALUATION
+
+avwap_extension:
+  baseline_enabled: false
+  purpose: SEPARATE_INCREMENTAL_INFORMATION_TEST
+  anchor: SAME_CAUSAL_BREAKOUT_EPISODE
+  formula_raw_price: 10 * cumulative_amount / cumulative_vol
+  source_amount_unit: THOUSAND_CNY
+  source_volume_unit: HUNDRED_SHARES
+  intraday_avwap_available: false
+  factor_change_within_anchor_window_action: EXCLUDE_UNTIL_CA_CONTRACT_DEFINED
+
+costs:
+  commission_rate_research_assumption: 0.00025
+  minimum_commission_cny_research_assumption: 5
+  statutory_fee_schedule: REQUIRED_DATE_EFFECTIVE_NOT_BOUND
+  slippage_bps_per_side_scenarios: [5, 10, 20]
+  total_cost_multipliers: [1, 2, 3]
+  capacity_requires_open_auction_or_intraday_liquidity: true
+
+validation:
+  inherited_sample_register: configs/sample_windows_v1.yaml
+  historical_data_authority: RETROSPECTIVE_MECHANISM_DIAGNOSTIC_ONLY
+  true_forward_oos_start: AFTER_ACTUAL_RULE_FREEZE_AND_LATEST_VIEWED_DATE
+  proposed_walk_forward_train_years: 3
+  proposed_walk_forward_test_years: 1
+  purge_sessions_minimum: 20
+  embargo_sessions_minimum: 20
+  event_overlap_control: BY_SYMBOL_EPISODE_AND_MARKET_CLUSTER
+  bootstrap_unit: SECTOR_DATE_CLUSTER
+  baselines: [MATCHED_MOMENTUM_CONTROLS, BREAKOUT_ENTRY, EMA_FIRST_PULLBACK]
+  extensions: [CAUSAL_AVWAP, PIT_SECTOR_FILTER]
+  concentration_stress: REMOVE_BEST_TRADE_AND_BEST_FIVE_TRADES
+  planned_loss_stress_fractions: [0.02, 0.05, 0.08, 0.12, 0.20]
+
+implementation_gates:
+  - VERIFY_PIT_UNIVERSE_AND_WARMUP_COVERAGE
+  - VERIFY_RAW_ADJUSTED_PRICE_AND_FIELD_UNIT_ALIGNMENT
+  - DEFINE_AVAILABLE_AT_FOR_EVERY_FEATURE
+  - RESOLVE_CORPORATE_ACTION_AND_MISSING_VALUATION_CONTRACTS
+  - BUILD_OR_ADAPT_REVIEWED_SHARES_CASH_AND_SELLABLE_LOT_LEDGER
+  - ENSURE_OPEN_ENTRY_PNL_INCLUDES_ENTRY_SESSION
+  - BIND_DATE_EFFECTIVE_FEES
+  - RECORD_ALL_EXPERIMENTS_AND_FREEZE_RULES_BEFORE_FORWARD_EVALUATION

@@ -1,0 +1,14 @@
+{
+  "authority": "HAND_EXPECTED_ENGINEERING_ONLY",
+  "calendar": "DECLARED_SYNTHETIC_WEEKDAYS_AND_FOUR_EXPLICIT_JANUARY_SESSIONS",
+  "note": "150 flat closes at 10, four leaders break to 12 on Dec-29. Only A touches on Jan-02/03 and Jan-05; Jan-04 separates segments.",
+  "events": [
+    {"ts_code": "A", "root_date": 20171229, "signal_date": 20180102, "root_age_sessions": 1, "touch_no": 1, "event_status": "FIRST_CANDIDATE"},
+    {"ts_code": "A", "root_date": 20171229, "signal_date": 20180105, "root_age_sessions": 4, "touch_no": 2, "event_status": "LATER_CANDIDATE"}
+  ],
+  "controls_each_event": ["B", "C", "D"],
+  "control_distance": 0.0,
+  "leaders": ["A", "B", "C", "D"],
+  "roots": 4,
+  "output_root_count_before_start": 4
+}

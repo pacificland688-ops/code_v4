@@ -1,0 +1,93 @@
+# P0-P2 draft: no labels or returns; content hashes are part of run identity.
+schema: momentum_pullback.engineering.v0_2.r2
+strategy_id: martin_luk_pullback_ashare_v0_2
+status: DRAFT
+parameter_status: PROPOSED
+freeze_timestamp: null
+outcomes_enabled: false
+market:
+  universe: CSI300_PIT
+  asset: A_SHARE_COMMON_STOCK
+  direction: LONG_ONLY
+features:
+  ema_support: 21
+  ema_trend: 50
+  ema_adjust: false
+  slope_lag: 5
+  momentum_intervals: 63
+  prior_high_observations: 20
+  volatility_intervals: 20
+  min_price_observations: 150
+  adv_market_sessions: 20
+  adv_window: MARKET_SESSIONS_INCLUDING_SIGNAL_DAY
+  halt_amount: VERIFIED_FULL_DAY_ZERO_ONLY
+  rank_denominator: ALL_PIT_ELIGIBLE_WITH_KNOWN_WARMUP
+  rank_ties: MOMENTUM_DESC_CODE_ASC
+  covariate_percentile: AVERAGE_RANK_OVER_SAME_DENOMINATOR
+  top_fraction: 0.2
+events:
+  reset: VALID_CLOSE_LE_EMA50
+  same_day_reclaim: true
+  wait_sessions: 20
+  primary_first_window: ROOT_PLUS_1_THROUGH_WAIT_LIMIT
+  unknown_root: PERSIST_UNTIL_VALID_RESET_OR_HISTORY_REPLAY
+matching:
+  controls: 3
+  covariates:
+  - momentum63
+  - volatility20
+  - circ_mv_cny
+  - adv20_cny
+  caliper: 0.2
+  distance: MEAN_SQUARED_PERCENTILE_DIFFERENCE
+  industry: SIGNAL_TIME_PIT_SAME_INDUSTRY
+  ties: DISTANCE_ASC_CODE_ASC
+  replacement_within_event: false
+  reuse_across_events: true
+  outcome_replacement: false
+orders:
+  implementation: RESERVED_FOR_P4
+  signal_clock: SIGNAL_CUTOFF
+  order_clock: ORDER_DECISION_CUTOFF
+  open_used_in_decision: false
+  proposed_limit_markup: 0.01
+  quantity: FIXED_BEFORE_ORDER_FREEZE
+study:
+  implementation: RESERVED_FOR_P3
+  primary_horizon_sessions: 10
+  primary_measure: MATCHED_CONDITIONAL_GROSS_TOTAL_RETURN_DIFFERENCE
+  minimum_economic_increment: null
+  power_target: null
+  research_interval: null
+scope:
+  purpose: ENGINEERING_ONLY
+  feature_origin: 20150105
+  output_start: 20180101
+  output_end: 20180330
+sources:
+  cache_root: data/parquet
+  status: UNBOUND
+  real_events_permitted: false
+  required_bindings:
+    calendar: MARKET_SESSION_NO_NATURAL_DAY_FALLBACK
+    universe: ANNOUNCEMENT_AVAILABLE_AND_EFFECTIVE_DATE
+    stock_status: PIT_ST_AND_VERIFIED_FULL_DAY_HALT
+    prices: RAW_ADJUSTED_AND_POSITIVE_FACTORS_ONE_TO_ONE
+    basic: SIGNAL_TIME_AVAILABLE_CIRCULATING_VALUE_CNY
+    industry: PUBLICATION_AVAILABLE_AND_EFFECTIVE_DATE
+  corporate_action_time_fields:
+  - announced_at
+  - rights_record_date
+  - price_effective_at
+  - quantity_effective_at
+  - share_delivery_at
+  - sellable_at
+  - cash_payable_at
+  - cash_received_at
+documents:
+- path: momentum_pullback/minimal_contract_v0_2_onepage.md
+  sha256: af67d78e9d8e257a41672d37ac522ea9c6ce2d7623321c7f2ceb3d79239c439f
+- path: momentum_pullback/minimal_contract_v0_2.md
+  sha256: 7469bfbe060f9bf65641034578b4fbe4ff5fe816eb5eebda615e9d369effde67
+- path: momentum_pullback/engineering_contract_v0_2_r2.md
+  sha256: 4d3de319980f4afdca1e063cd52b6f9f0b3b8f10b551d3ea0fa7e606084770f5
