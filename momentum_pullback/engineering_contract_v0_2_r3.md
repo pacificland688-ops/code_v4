@@ -35,6 +35,9 @@
 - 合法分母只在必需名册内部计算：当时是成员、ST 状态已知且不是 ST、价格历史已知、有效观测不少于 150、动量有限。已知历史不足可以排除并标 `KNOWN_INELIGIBLE`。历史未知或资格未知保持 `UNKNOWN`，并把当日 `rank_denominator_complete` 设为假。
 - 没有名册时可以计算价格特征，也可以标出行内已知不合格，但不得宣布分母完整，也不得给出 `KNOWN_ELIGIBLE`。
 - 股票批次只许计算各自的价格特征（`rank=false`）。全部必需证券到齐后，只做一次横截面排名和同一分母上的平均秩百分位。对完整名册的子集直接排名必须失败，不能各取前 20%。
+- 横截面入口先检查证券与日期的业务键。完全相同的重复和字段互相冲突的重复都拒绝，不能任取一条。汇总后的行情键必须与当日跟踪名册一致；多出来的证券报 `CROSS_SECTION_SCOPE_MISMATCH`。
+- 行情行里已知为成员的证券，必须属于当日 `required_for_rank`。否则报 `ROSTER_MEMBERSHIP_CONFLICT`。只跟踪、不参加排名的证券，行内 `is_member` 必须为假，不能借成员标志把分母放大。
+- 排名完成后，分母中的行标记 `in_rank_denominator`，当日所有行写入同一个 `rank_denominator_hash`，并在这个集合上保存平均秩百分位。匹配只接受这个集合和这些百分位。集合不一致报 `MATCH_DENOMINATOR_MISMATCH`；百分位与同一集合上的重算不一致报 `MATCH_PERCENTILE_IDENTITY_MISMATCH`。
 
 ## 日历
 
@@ -42,4 +45,8 @@
 
 ## 版本
 
-本草案的运行使用检查点 `momentum_pullback.checkpoint.v3`。合同哈希、代码哈希、名册、日历或已消费历史变化后，旧检查点不能续跑，也不能自动改写成新结果。
+本草案的运行使用检查点 `momentum_pullback.checkpoint.v4`。`momentum_pullback.checkpoint.v2` 与 `momentum_pullback.checkpoint.v3` 都不能续跑，也不能自动升级。
+
+v4 在合同哈希、代码哈希、特征起点、已处理截止和已消费行情/日历之外，新增必需字段 `consumed_roster_hash`。它覆盖截止日及以前的名册行：`trade_date`、`ts_code`、`required_for_rank`、`track_identity`。改变其中任一历史记录，恢复旧状态会报 `CHECKPOINT_IDENTITY_MISMATCH`。只在截止日之后追加名册、行情或日历，已消费前缀保持不变，可以核对后续跑。不能靠修改布尔标志把未验证状态补成种子。
+
+来源裁定的目录、台账、可行性报告、清单和隔离键文件作为一套发布。新内容先写在暂存位置；与已有五件套冲突时，在替换任何旧文件之前拒绝。五件套要么全部保持原哈希，要么全部是同一次运行的字节。相同输入的重复运行不改写已有字节。旁路因子与无效因子键是一对一关联；聚合后的重复键直接拒绝，不能拆成多条缺口，也不能保留最后一条。

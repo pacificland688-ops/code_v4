@@ -7,8 +7,8 @@ import pandas as pd
 import pytest
 
 from momentum_pullback.casebook import declare_synthetic_roster, hand_panel
-from momentum_pullback.contracts import ROOT, GateError, validate_contract
-from momentum_pullback.data_adapter import validate_calendar_binding
+from momentum_pullback.contracts import ROOT, GateError, checkpoint, restore_checkpoint, validate_contract
+from momentum_pullback.data_adapter import input_history_hash, roster_history_hash, validate_calendar_binding
 from momentum_pullback.event_engine import build_events
 from momentum_pullback.features import apply_cross_section, build_features
 
@@ -172,8 +172,76 @@ def test_tracked_reentry_does_not_zero_touch_count(hand_draft):
     assert out["states"]["X"]["touch_no"] == 2
 
 
-def test_legacy_checkpoint_is_not_upgraded(base_contract):
-    from momentum_pullback.contracts import restore_checkpoint
-    saved = {"schema": "momentum_pullback.checkpoint.v2", "state": {"touch_no": 1}, "state_hash": "ignored"}
+@pytest.mark.parametrize("schema", ["momentum_pullback.checkpoint.v2", "momentum_pullback.checkpoint.v3"])
+def test_legacy_checkpoint_is_not_upgraded(base_contract, schema):
+    saved = {"schema": schema, "state": {"touch_no": 1}, "state_hash": "ignored"}
     with pytest.raises(GateError, match="CHECKPOINT_NOT_UPGRADABLE"):
-        restore_checkpoint(saved, contract=base_contract, code_hash="code", feature_origin=20150105, processed_cutoff=20171229, history_hash="history")
+        restore_checkpoint(saved, contract=base_contract, code_hash="code", feature_origin=20150105, processed_cutoff=20171229, history_hash="history", roster_hash="roster")
+
+
+def test_consumed_roster_rejects_past_edits_and_accepts_future_append(hand_draft):
+    panel, calendar = hand_panel()
+    panel.loc[panel.ts_code.eq("B") & panel.trade_date.eq(20180102), "adj_low"] = 10.1
+    roster = declare_synthetic_roster(panel)
+    cutoff = 20171229
+    prefix = build_features(panel[panel.trade_date.le(cutoff)], calendar, hand_draft, roster=roster, return_states=True)
+    before = build_events(prefix["features"], hand_draft)
+    history = input_history_hash(panel, calendar, cutoff, roster)
+    roster_hash = roster_history_hash(roster, cutoff)
+    saved = checkpoint({"feature_states": prefix["states"], "event_states": before["states"]}, contract=hand_draft, code_hash="code", feature_origin=calendar[0], processed_cutoff=cutoff, history_hash=history, roster_hash=roster_hash)
+    assert saved["schema"] == "momentum_pullback.checkpoint.v4"
+    assert saved["consumed_roster_hash"] == roster_hash
+    future = pd.concat([roster, roster[roster.trade_date.eq(roster.trade_date.max())].assign(trade_date=20180108)], ignore_index=True)
+    assert input_history_hash(panel, calendar, cutoff, future) == history
+    restored = restore_checkpoint(saved, contract=hand_draft, code_hash="code", feature_origin=calendar[0], processed_cutoff=cutoff, history_hash=input_history_hash(panel, calendar, cutoff, future), roster_hash=roster_history_hash(future, cutoff))
+    resumed = build_events(build_features(panel[panel.trade_date.gt(cutoff)], calendar, hand_draft, roster=future, states=restored["feature_states"]), hand_draft, states=restored["event_states"])
+    full = build_events(build_features(panel, calendar, hand_draft, roster=future), hand_draft)
+    pd.testing.assert_frame_equal(resumed["events"].reset_index(drop=True), full["events"].reset_index(drop=True))
+    changed = roster.copy()
+    changed.loc[changed.trade_date.le(cutoff) & changed.ts_code.eq("T"), "required_for_rank"] = False
+    with pytest.raises(GateError, match="CHECKPOINT_IDENTITY_MISMATCH"):
+        restore_checkpoint(saved, contract=hand_draft, code_hash="code", feature_origin=calendar[0], processed_cutoff=cutoff, history_hash=input_history_hash(panel, calendar, cutoff, changed), roster_hash=roster_history_hash(changed, cutoff))
+    with pytest.raises(GateError, match="ROSTER_MEMBERSHIP_CONFLICT"):
+        build_features(panel, calendar, hand_draft, roster=changed)
+
+
+def test_rank_and_match_share_one_denominator(hand_draft):
+    from momentum_pullback.event_engine import build_events
+    from momentum_pullback.matching import lock_matches
+    panel, calendar = hand_panel()
+    roster = declare_synthetic_roster(panel)
+    baseline = build_features(panel, calendar, hand_draft, roster=roster, rank=False)
+    conflict = roster.copy()
+    conflict.loc[conflict.ts_code.eq("T"), "required_for_rank"] = False
+    with pytest.raises(GateError, match="ROSTER_MEMBERSHIP_CONFLICT"):
+        apply_cross_section(baseline, conflict, hand_draft)
+    tracked = baseline.copy()
+    tracked.loc[tracked.ts_code.eq("T"), "is_member"] = False
+    ranked = apply_cross_section(tracked, conflict, hand_draft)
+    day = ranked[ranked.trade_date.eq(20180102)]
+    assert day.loc[day.in_rank_denominator, "ts_code"].nunique() == 19
+    assert "T" not in set(day.loc[day.in_rank_denominator, "ts_code"])
+    assert day.rank_denominator_hash.nunique() == 1
+    events = build_events(ranked, hand_draft)
+    paired = lock_matches(events["events"], ranked, events["observations"], hand_draft)
+    if paired["status"] == "MATCHES_LOCKED":
+        signal = day[day.ts_code.eq("A")].iloc[0]
+        balance = paired["balance"][paired["balance"].covariate.eq("momentum63")].iloc[0]
+        assert balance.event_percentile == pytest.approx(float(signal.pct_momentum63))
+    widened = ranked.copy()
+    widened.loc[widened.ts_code.eq("T") & widened.trade_date.eq(20180102), "is_member"] = True
+    with pytest.raises(GateError, match="MATCH_DENOMINATOR_MISMATCH"):
+        lock_matches(events["events"], widened, events["observations"], hand_draft)
+
+
+def test_overlapping_batches_never_rank(hand_draft):
+    panel, calendar = hand_panel()
+    roster = declare_synthetic_roster(panel)
+    baseline = build_features(panel, calendar, hand_draft, roster=roster, rank=False)
+    extra = baseline[baseline.ts_code.eq("B") & baseline.trade_date.eq(20180102)]
+    identical = pd.concat([baseline, extra], ignore_index=True)
+    conflicting = identical.copy()
+    conflicting.loc[conflicting.index[-1], "momentum63"] = 9.0
+    for frame in (identical, conflicting):
+        with pytest.raises(GateError, match="DUPLICATE_OR_CONFLICTING_KEYS"):
+            apply_cross_section(frame, roster, hand_draft)

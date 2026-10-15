@@ -9,6 +9,7 @@ import pytest
 from momentum_pullback.acceptance import run_hand_acceptance
 from momentum_pullback.contracts import ROOT, GateError, validate_contract
 from momentum_pullback.event_engine import build_events
+from momentum_pullback.features import average_rank_percentiles
 from momentum_pullback.matching import lock_matches
 
 
@@ -190,6 +191,11 @@ def test_matching_caliper_boundary_ties_and_same_day_reuse(hand_features, hand_d
     events = state["events"].iloc[[0]].copy()
     features = hand_features.copy()
     features.loc[features.ts_code.eq("B"), "momentum63"] = 0.19
+    signal_date = int(events.iloc[0].signal_date)
+    denominator = features.trade_date.eq(signal_date) & features.in_rank_denominator
+    refreshed = average_rank_percentiles(features.loc[denominator], ["momentum63", "volatility20", "circ_mv_cny", "adv20_cny"])
+    for column in refreshed.columns:
+        features.loc[refreshed.index, "pct_" + column] = refreshed[column]
     for caliper, expected in [(0.10, "MATCHES_LOCKED"), (0.099, "MATCHING_UNEVALUABLE")]:
         payload = hand_draft.payload
         payload["matching"]["caliper"] = caliper

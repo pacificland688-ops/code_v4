@@ -71,9 +71,9 @@ def test_document_change_requires_new_binding(base_contract, tmp_path):
         validate_contract(payload, root=tmp_path)
 
 
-@pytest.mark.parametrize("changed", ["contract", "code", "history", "origin", "cutoff"])
+@pytest.mark.parametrize("changed", ["contract", "code", "history", "roster", "origin", "cutoff"])
 def test_checkpoint_identity_mismatch_blocks(base_contract, changed):
-    args = dict(contract=base_contract, code_hash="implementation-A", feature_origin=20150105, processed_cutoff=20171229, history_hash="history-A")
+    args = dict(contract=base_contract, code_hash="implementation-A", feature_origin=20150105, processed_cutoff=20171229, history_hash="history-A", roster_hash="roster-A")
     saved = checkpoint({"X": {"touch_no": 1}}, **args)
     newer = args.copy()
     if changed == "contract":
@@ -84,6 +84,8 @@ def test_checkpoint_identity_mismatch_blocks(base_contract, changed):
         newer["code_hash"] = "implementation-B"
     elif changed == "history":
         newer["history_hash"] = "history-B"
+    elif changed == "roster":
+        newer["roster_hash"] = "roster-B"
     elif changed == "origin":
         newer["feature_origin"] = 20150106
     else:
@@ -135,7 +137,7 @@ def test_duplicate_yaml_key_is_not_keep_last(tmp_path):
 
 
 def test_checkpoint_state_content_is_protected(base_contract):
-    args = dict(contract=base_contract, code_hash="code", feature_origin=20150105, processed_cutoff=20171229, history_hash="history")
+    args = dict(contract=base_contract, code_hash="code", feature_origin=20150105, processed_cutoff=20171229, history_hash="history", roster_hash="roster")
     saved = checkpoint({"touch_no": 1}, **args)
     saved["state"]["touch_no"] = 0
     with pytest.raises(GateError, match="CHECKPOINT_STATE_CONTENT_CHANGED"):

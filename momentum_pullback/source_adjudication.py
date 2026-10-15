@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -9,7 +11,8 @@ import numpy as np
 import pandas as pd
 import pyarrow.parquet as pq
 
-from momentum_pullback.contracts import ROOT, file_hash, fingerprint, write_json
+from momentum_pullback.contracts import ROOT, GateError, file_hash, fingerprint, write_json
+from momentum_pullback.data_adapter import unique_keys
 
 ORIGIN = 20150105
 OUTPUT_START = 20180101
@@ -68,8 +71,11 @@ def build_issue_rows(invalid: pd.DataFrame, sibling: pd.DataFrame, unverified_we
     """One ledger row per stored-factor failure. Eligibility stays unknown without PIT proof."""
     if invalid.empty:
         return pd.DataFrame(columns=LEDGER_COLUMNS)
+    unique_keys(invalid, ["ts_code", "trade_date"], "stored_factor_issues")
     sibling_keys = sibling.rename(columns={"adj_factor": "sibling_factor"}) if not sibling.empty else pd.DataFrame(columns=["ts_code", "trade_date", "sibling_factor"])
-    frame = invalid.merge(sibling_keys[["ts_code", "trade_date", "sibling_factor"]], on=["ts_code", "trade_date"], how="left")
+    if not sibling_keys.empty:
+        unique_keys(sibling_keys, ["ts_code", "trade_date"], "sibling_adj_factor")
+    frame = invalid.merge(sibling_keys[["ts_code", "trade_date", "sibling_factor"]], on=["ts_code", "trade_date"], how="left", validate="one_to_one")
     rows = []
     for record in frame.itertuples(index=False):
         scope, reason = classify_scope(False, None)
@@ -190,7 +196,9 @@ def _load_sibling(root: Path, keys: pd.DataFrame) -> tuple[pd.DataFrame, list[Pa
             frame = _read_columns(path, ["ts_code", "trade_date", "adj_factor"], int(keys.trade_date.min()), int(keys.trade_date.max()))
             frames.append(frame)
     sibling = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=["ts_code", "trade_date", "adj_factor"])
-    sibling = sibling.merge(keys[["ts_code", "trade_date"]].drop_duplicates(), on=["ts_code", "trade_date"], how="inner")
+    if not sibling.empty:
+        unique_keys(sibling, ["ts_code", "trade_date"], "sibling_adj_factor")
+    sibling = sibling.merge(keys[["ts_code", "trade_date"]].drop_duplicates(), on=["ts_code", "trade_date"], how="inner", validate="one_to_one")
     return sibling, consumed
 
 
@@ -302,62 +310,107 @@ def render_report(summary: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _artifact_destinations(root: Path, evidence: Path) -> dict[str, Path]:
+    sibling = root / "data" / "research" / "momentum_pullback" / "source_adjudication_r3" / "unverified_sibling_factor_keys.parquet"
+    return {
+        "source_catalog.json": evidence / "source_catalog.json",
+        "factor_issue_ledger.parquet": evidence / "factor_issue_ledger.parquet",
+        "source_feasibility_report.md": evidence / "source_feasibility_report.md",
+        "adjudication_manifest.json": evidence / "adjudication_manifest.json",
+        "unverified_sibling_factor_keys.parquet": sibling,
+    }
+
+
+def _publish_artifact_set(staged: dict[str, Path], destinations: dict[str, Path]) -> dict[str, str]:
+    """Publish the five artifacts together. A conflicting rerun must not replace any of them."""
+    new_hash = {name: file_hash(path) for name, path in staged.items()}
+    present = {name: path.is_file() for name, path in destinations.items()}
+    if any(present.values()):
+        if not all(present.values()):
+            raise GateError("ARTIFACT_SET_INCOMPLETE", sorted(name for name, found in present.items() if not found))
+        old_hash = {name: file_hash(path) for name, path in destinations.items()}
+        if old_hash != new_hash:
+            raise GateError("ARTIFACT_ALREADY_EXISTS", sorted(name for name in old_hash if old_hash[name] != new_hash[name]))
+        return old_hash
+    for name, path in destinations.items():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        os.replace(staged[name], path)
+    return new_hash
+
+
 def adjudicate(root: Path = ROOT, evidence: Path | None = None) -> dict[str, Any]:
     evidence = evidence or (root / "momentum_pullback" / "evidence" / "source_adjudication")
     evidence.mkdir(parents=True, exist_ok=True)
     invalid, price_stats, price_files = _accumulate_prices(root)
+    if not invalid.empty:
+        unique_keys(invalid, ["ts_code", "trade_date"], "stored_factor_issues")
     sibling, sibling_files = _load_sibling(root, invalid[["ts_code", "trade_date"]] if not invalid.empty else pd.DataFrame(columns=["ts_code", "trade_date"]))
     codes, weight, weight_files = _weight_codes(root)
     ledger = build_issue_rows(invalid, sibling, codes)
-    isolated = root / "data" / "research" / "momentum_pullback" / "source_adjudication_r3"
-    isolated.mkdir(parents=True, exist_ok=True)
-    candidates = ledger.loc[ledger.sibling_factor_state.eq("FINITE_POSITIVE"), ["ts_code", "trade_date", "audit_slice", "sibling_matches_adjusted_price", "proposed_treatment"]].copy()
-    candidate_path = isolated / "unverified_sibling_factor_keys.parquet"
-    candidates.to_parquet(candidate_path, index=False)
-    ledger_path = evidence / "factor_issue_ledger.parquet"
-    ledger.to_parquet(ledger_path, index=False)
-    output_ledger = ledger[ledger.audit_slice.eq("OUTPUT_WINDOW")]
-    summary = {
-        "output_window_invalid_rows": int(output_ledger.shape[0]),
-        "output_window_invalid_codes": int(output_ledger.ts_code.nunique()) if not output_ledger.empty else 0,
-        "warmup_invalid_rows": int(ledger.audit_slice.eq("WARMUP").sum()) if not ledger.empty else 0,
-        "sibling_scale_matches": int(output_ledger.sibling_matches_adjusted_price.fillna(False).sum()) if not output_ledger.empty else 0,
-        "invalid_codes_seen_in_unverified_weight": int(output_ledger.loc[output_ledger.seen_in_unverified_000300_weight_file, "ts_code"].nunique()) if not output_ledger.empty else 0,
-        "price_slices": price_stats["slices"],
-        "years": price_stats.get("years", {}),
-        "weight": weight,
-        "scope_class_counts": ledger.scope_class.value_counts().to_dict() if not ledger.empty else {},
-        "public_cache_modified": False,
-        "network_requests": 0,
-    }
-    catalog = {
-        "schema": CATALOG_SCHEMA,
-        "adjudication_clock": "REVIEW_TIME_NOT_A_HISTORICAL_PUBLICATION_TIME",
-        "scope": {"feature_origin": ORIGIN, "output_start": OUTPUT_START, "output_end": OUTPUT_END, "universe": "CSI300_PIT", "frequency": "DAILY", "direction": "LONG_ONLY"},
-        "parameter_status": "PROPOSED",
-        "outcomes_enabled": False,
-        "network_requests": 0,
-        "public_cache_modified": False,
-        "price_scale_formula": "ADJUSTED_EQUALS_RAW_TIMES_STORED_FACTOR",
-        "price_scale_formula_changed": False,
-        "factor_kind_where_finite": "CUMULATIVE_MULTIPLIER_NOT_REBASED_TO_ONE_AT_SAMPLE_END",
-        "tables": _table_presence(root),
-        "calendar_files_in_scope": _calendar_fact(root),
-        "weight_observation": weight,
-        "price_slice_counts": price_stats["slices"],
-        "input_files": [{"path": str(path.relative_to(root)), "sha256": file_hash(path)} for path in sorted(set(price_files + sibling_files + weight_files))],
-        "ledger_rows": len(ledger),
-        "ledger_sha256": file_hash(ledger_path),
-        "ledger_content_id": fingerprint(json.loads(ledger.to_json(orient="split", index=False))) if not ledger.empty else fingerprint([]),
-        "unverified_sibling_key_file": str(candidate_path.relative_to(root)),
-        "unverified_sibling_key_sha256": file_hash(candidate_path),
-    }
-    write_json(evidence / "source_catalog.json", catalog)
-    report = render_report(summary)
-    report_path = evidence / "source_feasibility_report.md"
-    report_path.write_text(report, encoding="utf-8")
-    manifest = {"ledger_sha256": catalog["ledger_sha256"], "ledger_rows": len(ledger), "catalog_sha256": file_hash(evidence / "source_catalog.json"), "report_sha256": file_hash(report_path), "sibling_keys_sha256": catalog["unverified_sibling_key_sha256"], "output_window_invalid_rows": summary["output_window_invalid_rows"], "public_cache_modified": False}
-    write_json(evidence / "adjudication_manifest.json", manifest)
+    destinations = _artifact_destinations(root, evidence)
+    staging = Path(tempfile.mkdtemp(prefix="source_adjudication_", dir=evidence))
+    try:
+        candidate_path = staging / "unverified_sibling_factor_keys.parquet"
+        ledger_path = staging / "factor_issue_ledger.parquet"
+        candidates = ledger.loc[ledger.sibling_factor_state.eq("FINITE_POSITIVE"), ["ts_code", "trade_date", "audit_slice", "sibling_matches_adjusted_price", "proposed_treatment"]].copy()
+        candidates.to_parquet(candidate_path, index=False)
+        ledger.to_parquet(ledger_path, index=False)
+        output_ledger = ledger[ledger.audit_slice.eq("OUTPUT_WINDOW")]
+        summary = {
+            "output_window_invalid_rows": int(output_ledger.shape[0]),
+            "output_window_invalid_codes": int(output_ledger.ts_code.nunique()) if not output_ledger.empty else 0,
+            "warmup_invalid_rows": int(ledger.audit_slice.eq("WARMUP").sum()) if not ledger.empty else 0,
+            "sibling_scale_matches": int(output_ledger.sibling_matches_adjusted_price.fillna(False).sum()) if not output_ledger.empty else 0,
+            "invalid_codes_seen_in_unverified_weight": int(output_ledger.loc[output_ledger.seen_in_unverified_000300_weight_file, "ts_code"].nunique()) if not output_ledger.empty else 0,
+            "price_slices": price_stats["slices"],
+            "years": price_stats.get("years", {}),
+            "weight": weight,
+            "scope_class_counts": ledger.scope_class.value_counts().to_dict() if not ledger.empty else {},
+            "public_cache_modified": False,
+            "network_requests": 0,
+        }
+        catalog = {
+            "schema": CATALOG_SCHEMA,
+            "adjudication_clock": "REVIEW_TIME_NOT_A_HISTORICAL_PUBLICATION_TIME",
+            "scope": {"feature_origin": ORIGIN, "output_start": OUTPUT_START, "output_end": OUTPUT_END, "universe": "CSI300_PIT", "frequency": "DAILY", "direction": "LONG_ONLY"},
+            "parameter_status": "PROPOSED",
+            "outcomes_enabled": False,
+            "network_requests": 0,
+            "public_cache_modified": False,
+            "price_scale_formula": "ADJUSTED_EQUALS_RAW_TIMES_STORED_FACTOR",
+            "price_scale_formula_changed": False,
+            "factor_kind_where_finite": "CUMULATIVE_MULTIPLIER_NOT_REBASED_TO_ONE_AT_SAMPLE_END",
+            "tables": _table_presence(root),
+            "calendar_files_in_scope": _calendar_fact(root),
+            "weight_observation": weight,
+            "price_slice_counts": price_stats["slices"],
+            "input_files": [{"path": str(path.relative_to(root)), "sha256": file_hash(path)} for path in sorted(set(price_files + sibling_files + weight_files))],
+            "ledger_rows": len(ledger),
+            "ledger_sha256": file_hash(ledger_path),
+            "ledger_content_id": fingerprint(json.loads(ledger.to_json(orient="split", index=False))) if not ledger.empty else fingerprint([]),
+            "unverified_sibling_key_file": str(destinations["unverified_sibling_factor_keys.parquet"].relative_to(root)),
+            "unverified_sibling_key_sha256": file_hash(candidate_path),
+        }
+        catalog_path = staging / "source_catalog.json"
+        report_path = staging / "source_feasibility_report.md"
+        manifest_path = staging / "adjudication_manifest.json"
+        write_json(catalog_path, catalog)
+        report_path.write_text(render_report(summary), encoding="utf-8")
+        manifest = {"ledger_sha256": catalog["ledger_sha256"], "ledger_rows": len(ledger), "catalog_sha256": file_hash(catalog_path), "report_sha256": file_hash(report_path), "sibling_keys_sha256": catalog["unverified_sibling_key_sha256"], "output_window_invalid_rows": summary["output_window_invalid_rows"], "public_cache_modified": False}
+        write_json(manifest_path, manifest)
+        staged = {
+            "source_catalog.json": catalog_path,
+            "factor_issue_ledger.parquet": ledger_path,
+            "source_feasibility_report.md": report_path,
+            "adjudication_manifest.json": manifest_path,
+            "unverified_sibling_factor_keys.parquet": candidate_path,
+        }
+        _publish_artifact_set(staged, destinations)
+    finally:
+        if staging.exists():
+            for child in staging.iterdir():
+                child.unlink(missing_ok=True)
+            staging.rmdir()
     return {"summary": summary, "evidence": str(evidence), "manifest": manifest}
 
 

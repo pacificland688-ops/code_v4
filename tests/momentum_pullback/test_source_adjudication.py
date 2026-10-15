@@ -5,7 +5,9 @@ import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
+import pytest
 
+from momentum_pullback.contracts import GateError, file_hash
 from momentum_pullback.source_adjudication import (
     adjudicate, build_issue_rows, classify_scope, publication_status, resolve_stored_factor,
 )
@@ -65,3 +67,23 @@ def test_runner_does_not_rewrite_source_bytes(tmp_path):
     assert result["summary"]["public_cache_modified"] is False
     assert result["manifest"]["output_window_invalid_rows"] == 1
     assert result["summary"]["scope_class_counts"] == {"ELIGIBILITY_UNKNOWN": 1}
+    names = ["source_catalog.json", "factor_issue_ledger.parquet", "source_feasibility_report.md", "adjudication_manifest.json"]
+    targets = [evidence / name for name in names]
+    targets.append(tmp_path / "data/research/momentum_pullback/source_adjudication_r3/unverified_sibling_factor_keys.parquet")
+    first = {path.name: file_hash(path) for path in targets}
+    first_bytes = {path.name: path.read_bytes() for path in targets}
+    adjudicate(tmp_path, evidence)
+    assert {path.name: path.read_bytes() for path in targets} == first_bytes
+    raw.loc[0, "adj_close"] = 13.0
+    pq.write_table(pa.Table.from_pandas(raw), price / "cache.parquet")
+    with pytest.raises(GateError, match="ARTIFACT_ALREADY_EXISTS"):
+        adjudicate(tmp_path, evidence)
+    assert {path.name: file_hash(path) for path in targets} == first
+    assert {path.name: path.read_bytes() for path in targets} == first_bytes
+
+
+def test_duplicate_sibling_keys_do_not_multiply_the_ledger():
+    invalid = pd.DataFrame({"ts_code": ["X"], "trade_date": [20180102], "close": [10.0], "adj_close": [12.0], "stored_factor": [np.nan], "audit_slice": ["OUTPUT_WINDOW"]})
+    siblings = pd.DataFrame({"ts_code": ["X", "X"], "trade_date": [20180102, 20180102], "adj_factor": [1.2, 1.3]})
+    with pytest.raises(GateError, match="DUPLICATE_OR_CONFLICTING_KEYS"):
+        build_issue_rows(invalid, siblings, set())

@@ -8,6 +8,7 @@ from momentum_pullback.casebook import hand_panel
 from momentum_pullback.contracts import GateError
 from momentum_pullback.features import build_features
 from momentum_pullback.contracts import canonical_bytes
+from momentum_pullback.casebook import declare_synthetic_roster
 from momentum_pullback.data_adapter import input_history_hash
 
 
@@ -131,9 +132,18 @@ def test_unknown_liquidity_checkpoint_is_json_safe(hand_draft):
 
 def test_calendar_history_change_invalidates_consumed_prefix():
     panel, calendar = one_stock()
-    original = input_history_hash(panel, calendar, 20171229)
-    assert input_history_hash(panel, calendar + [20180108], 20171229) == original
-    assert input_history_hash(panel, calendar[1:], 20171229) != original
+    roster = declare_synthetic_roster(panel)
+    original = input_history_hash(panel, calendar, 20171229, roster)
+    assert input_history_hash(panel, calendar + [20180108], 20171229, roster) == original
+    assert input_history_hash(panel, calendar[1:], 20171229, roster) != original
+    changed = roster.copy()
+    changed.loc[changed.trade_date.eq(20171229), "required_for_rank"] = False
+    assert input_history_hash(panel, calendar, 20171229, changed) != original
+    future = roster.copy()
+    extra = future.iloc[[0]].copy()
+    extra["trade_date"] = 20180108
+    future = pd.concat([future, extra], ignore_index=True)
+    assert input_history_hash(panel, calendar, 20171229, future) == original
 
 
 def test_no_resume_from_empty_state_or_wrong_origin(hand_draft):

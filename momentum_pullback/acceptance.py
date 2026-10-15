@@ -8,7 +8,7 @@ import pandas as pd
 
 from momentum_pullback.casebook import declare_synthetic_roster, hand_contract, hand_panel
 from momentum_pullback.contracts import ROOT, Contract, GateError, checkpoint, file_hash, restore_checkpoint, write_json
-from momentum_pullback.data_adapter import frame_hash, input_history_hash
+from momentum_pullback.data_adapter import frame_hash, input_history_hash, roster_history_hash
 from momentum_pullback.event_engine import build_events
 from momentum_pullback.features import build_features
 from momentum_pullback.matching import lock_matches
@@ -32,9 +32,10 @@ def run_hand_acceptance(contract: Contract, *, root: Path = ROOT) -> tuple[Path,
     prefix_feature_result = build_features(panel[panel.trade_date.le(20171229)], calendar, draft, roster=roster, return_states=True)
     prefix = prefix_feature_result["features"]
     early = build_events(prefix, draft)
-    consumed = input_history_hash(panel, calendar, 20171229)
-    saved = checkpoint({"event_states": early["states"], "feature_states": prefix_feature_result["states"]}, contract=draft, code_hash=manifest["code_hash"], feature_origin=calendar[0], processed_cutoff=20171229, history_hash=consumed)
-    state = restore_checkpoint(saved, contract=draft, code_hash=manifest["code_hash"], feature_origin=calendar[0], processed_cutoff=20171229, history_hash=input_history_hash(panel, calendar, 20171229))
+    consumed = input_history_hash(panel, calendar, 20171229, roster)
+    roster_hash = roster_history_hash(roster, 20171229)
+    saved = checkpoint({"event_states": early["states"], "feature_states": prefix_feature_result["states"]}, contract=draft, code_hash=manifest["code_hash"], feature_origin=calendar[0], processed_cutoff=20171229, history_hash=consumed, roster_hash=roster_hash)
+    state = restore_checkpoint(saved, contract=draft, code_hash=manifest["code_hash"], feature_origin=calendar[0], processed_cutoff=20171229, history_hash=input_history_hash(panel, calendar, 20171229, roster), roster_hash=roster_hash)
     resumed_features = build_features(panel[panel.trade_date.gt(20171229)], calendar, draft, roster=roster, states=state["feature_states"])
     pd.testing.assert_frame_equal(features[features.trade_date.gt(20171229)].reset_index(drop=True), resumed_features)
     resumed = build_events(resumed_features, draft, states=state["event_states"])

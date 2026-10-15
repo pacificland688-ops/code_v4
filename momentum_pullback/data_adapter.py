@@ -140,8 +140,20 @@ def frame_hash(frame: pd.DataFrame, *, cutoff: int | None = None) -> str:
     return fingerprint({"columns": list(selected.columns), "data": selected.to_json(orient="split", date_format="iso", index=False, double_precision=15)})
 
 
-def input_history_hash(panel: pd.DataFrame, calendar: list[int], cutoff: int) -> str:
-    return fingerprint({"observations": frame_hash(panel, cutoff=cutoff), "consumed_calendar": [date for date in calendar if date <= cutoff]})
+def roster_history_hash(roster: pd.DataFrame, cutoff: int) -> str:
+    """Hash consumed roster dates, securities, and roles. Future rows stay outside."""
+    columns = ["trade_date", "ts_code", "required_for_rank", "track_identity"]
+    if any(column not in roster for column in columns):
+        raise GateError("ROSTER_SCHEMA_MISSING", sorted(set(columns) - set(roster)))
+    selected = roster.loc[roster["trade_date"].le(cutoff), columns].copy()
+    unique_keys(selected, ["trade_date", "ts_code"], "consumed_roster")
+    payload = [[int(row.trade_date), str(row.ts_code), bool(row.required_for_rank), bool(row.track_identity)] for row in selected.sort_values(["trade_date", "ts_code"], kind="stable").itertuples(index=False)]
+    return fingerprint(payload)
+
+
+def input_history_hash(panel: pd.DataFrame, calendar: list[int], cutoff: int, roster: pd.DataFrame) -> str:
+    """Price, calendar, and roster prefix. Appending rows after cutoff keeps this value."""
+    return fingerprint({"observations": frame_hash(panel, cutoff=cutoff), "consumed_calendar": [date for date in calendar if date <= cutoff], "consumed_roster": roster_history_hash(roster, cutoff)})
 
 
 def read_partition(path: Path, columns: list[str], start: int, end: int) -> pd.DataFrame:

@@ -7,7 +7,7 @@ from collections import deque
 import numpy as np
 import pandas as pd
 
-from momentum_pullback.contracts import Contract, GateError
+from momentum_pullback.contracts import Contract, GateError, fingerprint
 from momentum_pullback.data_adapter import KEYS, unique_keys, validate_calendar_binding, validate_normalized_panel
 
 PERCENTILE_COVARIATES = ["momentum63", "volatility20", "circ_mv_cny", "adv20_cny"]
@@ -55,6 +55,8 @@ def assign_local_eligibility(frame: pd.DataFrame, contract: Contract) -> pd.Data
     frame = frame.copy()
     frame["strong_status"] = "UNKNOWN"
     frame["rank_denominator_complete"] = False
+    frame["in_rank_denominator"] = False
+    frame["rank_denominator_hash"] = pd.NA
     frame["momentum_rank"] = np.nan
     for column in PERCENTILE_COVARIATES:
         frame["pct_" + column] = np.nan
@@ -68,10 +70,13 @@ def assign_local_eligibility(frame: pd.DataFrame, contract: Contract) -> pd.Data
 def apply_cross_section(frame: pd.DataFrame, roster: pd.DataFrame, contract: Contract) -> pd.DataFrame:
     """Rank once, after every required name for these sessions is present."""
     cfg = contract.section("features")
+    unique_keys(frame, ["trade_date", "ts_code"], "cross_section_features")
     roster = validate_roster(roster, frame)
     frame = frame.copy()
     frame["strong_status"] = "UNKNOWN"
     frame["rank_denominator_complete"] = False
+    frame["in_rank_denominator"] = False
+    frame["rank_denominator_hash"] = pd.NA
     frame["momentum_rank"] = np.nan
     for column in PERCENTILE_COVARIATES:
         frame["pct_" + column] = np.nan
@@ -86,6 +91,13 @@ def apply_cross_section(frame: pd.DataFrame, roster: pd.DataFrame, contract: Con
         missing_tracked = sorted(tracked - present)
         if missing_tracked:
             raise GateError("IDENTITY_TRACKING_MEMBER_MISSING", {"trade_date": int(date), "missing_count": len(missing_tracked), "missing": missing_tracked[:10]})
+        extra = sorted(present - tracked)
+        if extra:
+            raise GateError("CROSS_SECTION_SCOPE_MISMATCH", {"trade_date": int(date), "extra_count": len(extra), "extra": extra[:10]})
+        known_members = set(day.loc[day["membership_known"].map(bool) & day["is_member"].map(bool), "ts_code"].astype(str))
+        outside_required = sorted(known_members - required)
+        if outside_required:
+            raise GateError("ROSTER_MEMBERSHIP_CONFLICT", {"trade_date": int(date), "count": len(outside_required), "codes": outside_required[:10]})
         required_rows = day[day.ts_code.astype(str).isin(required)]
         eligibility_known = required_rows["membership_known"] & (~required_rows["is_member"] | required_rows["st_known"])
         universe = required_rows[required_rows["is_member"] & required_rows["st_known"] & ~required_rows["is_st"]]
@@ -100,6 +112,9 @@ def apply_cross_section(frame: pd.DataFrame, roster: pd.DataFrame, contract: Con
             continue
         ranked = eligible.sort_values(["momentum63", "ts_code"], ascending=[False, True], kind="stable")
         n_top = math.ceil(len(ranked) * cfg["top_fraction"])
+        denominator_hash = fingerprint(sorted(ranked.ts_code.astype(str).tolist()))
+        frame.loc[ranked.index, "in_rank_denominator"] = True
+        frame.loc[day.index, "rank_denominator_hash"] = denominator_hash
         frame.loc[ranked.index, "momentum_rank"] = np.arange(1, len(ranked) + 1)
         frame.loc[ranked.index, "strong_status"] = "KNOWN_INELIGIBLE"
         percentages = average_rank_percentiles(ranked, PERCENTILE_COVARIATES)
@@ -221,6 +236,8 @@ def build_features(panel: pd.DataFrame, calendar: list[int], contract: Contract,
     else:
         frame["strong_status"] = "UNKNOWN"
         frame["rank_denominator_complete"] = False
+        frame["in_rank_denominator"] = False
+        frame["rank_denominator_hash"] = pd.NA
         frame["momentum_rank"] = np.nan
         for column in PERCENTILE_COVARIATES:
             frame["pct_" + column] = np.nan

@@ -13,9 +13,9 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA = "momentum_pullback.engineering.v0_2.r3"
-CHECKPOINT_SCHEMA = "momentum_pullback.checkpoint.v3"
+CHECKPOINT_SCHEMA = "momentum_pullback.checkpoint.v4"
 LEGACY_CONTRACT_SCHEMAS = {"momentum_pullback.engineering.v0_2.r2"}
-LEGACY_CHECKPOINT_SCHEMAS = {"momentum_pullback.checkpoint.v2"}
+LEGACY_CHECKPOINT_SCHEMAS = {"momentum_pullback.checkpoint.v2", "momentum_pullback.checkpoint.v3"}
 
 
 class GateError(ValueError):
@@ -163,14 +163,17 @@ def require_outcome_permission(contract: Contract) -> None:
     raise GateError("OUTCOMES_NOT_IMPLEMENTED_OR_AUTHORIZED")
 
 
-def checkpoint(state: Any, *, contract: Contract, code_hash: str, feature_origin: int, processed_cutoff: int, history_hash: str) -> dict[str, Any]:
-    return {"schema": CHECKPOINT_SCHEMA, "contract_hash": contract.hash, "code_hash": code_hash, "feature_origin": feature_origin, "processed_cutoff": processed_cutoff, "consumed_history_hash": history_hash, "state_hash": fingerprint(state), "state": copy.deepcopy(state)}
+def checkpoint(state: Any, *, contract: Contract, code_hash: str, feature_origin: int, processed_cutoff: int, history_hash: str, roster_hash: str) -> dict[str, Any]:
+    """Bind the consumed roster. A boolean inside the state is not this identity."""
+    if not isinstance(roster_hash, str) or not roster_hash:
+        raise GateError("ROSTER_HASH_MISSING")
+    return {"schema": CHECKPOINT_SCHEMA, "contract_hash": contract.hash, "code_hash": code_hash, "feature_origin": feature_origin, "processed_cutoff": processed_cutoff, "consumed_history_hash": history_hash, "consumed_roster_hash": roster_hash, "state_hash": fingerprint(state), "state": copy.deepcopy(state)}
 
 
-def restore_checkpoint(saved: dict[str, Any], *, contract: Contract, code_hash: str, feature_origin: int, processed_cutoff: int, history_hash: str) -> Any:
+def restore_checkpoint(saved: dict[str, Any], *, contract: Contract, code_hash: str, feature_origin: int, processed_cutoff: int, history_hash: str, roster_hash: str) -> Any:
     if saved.get("schema") in LEGACY_CHECKPOINT_SCHEMAS:
         raise GateError("CHECKPOINT_NOT_UPGRADABLE", saved.get("schema"))
-    expected = checkpoint(None, contract=contract, code_hash=code_hash, feature_origin=feature_origin, processed_cutoff=processed_cutoff, history_hash=history_hash)
+    expected = checkpoint(None, contract=contract, code_hash=code_hash, feature_origin=feature_origin, processed_cutoff=processed_cutoff, history_hash=history_hash, roster_hash=roster_hash)
     for key in expected:
         if key not in {"state", "state_hash"} and saved.get(key) != expected[key]:
             raise GateError("CHECKPOINT_IDENTITY_MISMATCH", key)
