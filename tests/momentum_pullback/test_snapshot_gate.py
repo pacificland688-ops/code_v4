@@ -9,7 +9,7 @@ import pandas as pd
 import pytest
 
 from momentum_pullback.casebook import hand_contract
-from momentum_pullback.contracts import ROOT, GateError, checkpoint, fingerprint, load_contract
+from momentum_pullback.contracts import ROOT, GateError, checkpoint, fingerprint, load_contract, restore_checkpoint
 from momentum_pullback.data_adapter import input_history_hash, roster_history_hash
 from momentum_pullback.data_gate import (
     build_checked_snapshot, load_checked_snapshot, make_snapshot_binding, prefix_identity, resume_bound_state, run_snapshot_smoke, validate_snapshot,
@@ -229,6 +229,7 @@ def test_hand_snapshot_reproduces_four_roots_two_events_and_six_matches(hand_rea
     binding = json.loads((hand_ready["smoke"] / "snapshot_state_binding.json").read_text(encoding="utf-8"))
     assert binding["schema"] == "momentum_pullback.snapshot_state_binding.v1"
     assert binding["processed_cutoff"] == 20171229
+    assert binding["code_hash"] == implementation_hash()
     assert binding["snapshot_id"] == summary["snapshot_id"]
     features = pd.read_parquet(hand_ready["smoke"] / "features.parquet")
     signal = features.loc[features.trade_date.eq(20180102)]
@@ -400,3 +401,60 @@ def test_real_read_stays_blocked_and_validation_does_not_rewrite_the_snapshot(tm
         build_checked_snapshot(real_manifest, contract=contract, policy=policy, mode="REAL", root=tmp_path / "real-build")
     assert not list(tmp_path.rglob("events.parquet"))
     assert not list(tmp_path.rglob("matching_matches.parquet"))
+
+
+def _foreign_checkpoint(checked, contract, policy, code_hash: str):
+    """Build a v4 checkpoint whose only foreign field is the implementation identity."""
+    panel = checked.panel
+    roster = checked.roster
+    calendar = [int(value) for value in checked.calendar.trade_date.tolist()]
+    cutoff = calendar[0]
+    saved = checkpoint({"event_states": {}, "feature_states": {}}, contract=contract, code_hash=code_hash, feature_origin=calendar[0], processed_cutoff=cutoff, history_hash=input_history_hash(panel, calendar, cutoff, roster), roster_hash=roster_history_hash(roster, cutoff))
+    identity = prefix_identity(checked, contract=contract, policy=policy, cutoff=cutoff)
+    core = fingerprint({key: saved[key] for key in ("schema", "contract_hash", "code_hash", "feature_origin", "processed_cutoff", "consumed_history_hash", "consumed_roster_hash", "state_hash")})
+    binding = {
+        "schema": "momentum_pullback.snapshot_state_binding.v1",
+        "checkpoint_core_hash": core,
+        "contract_hash": saved["contract_hash"],
+        "code_hash": code_hash,
+        "processed_cutoff": cutoff,
+        "snapshot_policy_hash": identity["snapshot_policy_hash"],
+        "source_prefix": identity["source_prefix"],
+        "normalized_history_hash": identity["normalized_history_hash"],
+        "roster_history_hash": identity["roster_history_hash"],
+        "calendar_prefix": identity["calendar_prefix"],
+        "approved_source_range_prefix": identity["approved_source_range_prefix"],
+        "snapshot_id": checked.manifest["snapshot_id"],
+    }
+    return saved, binding
+
+
+def test_c1_old_implementation_is_refused_even_when_its_binding_is_self_consistent(tmp_path, policy, parent):
+    manifest, contract = _tiny(tmp_path / "src", policy, parent, "C1-01")
+    checked = build_checked_snapshot(manifest, contract=contract, policy=policy, mode="SYNTHETIC", root=tmp_path / "build")
+    foreign = "a" * 64
+    assert foreign != implementation_hash()
+    saved, binding = _foreign_checkpoint(checked, contract, policy, foreign)
+    assert binding["checkpoint_core_hash"] == fingerprint({key: saved[key] for key in ("schema", "contract_hash", "code_hash", "feature_origin", "processed_cutoff", "consumed_history_hash", "consumed_roster_hash", "state_hash")})
+    with pytest.raises(GateError) as resume_error:
+        resume_bound_state(checked, saved, binding, contract=contract, policy=policy)
+    assert resume_error.value.code == "CHECKPOINT_IDENTITY_MISMATCH"
+    assert resume_error.value.details == "code_hash"
+    with pytest.raises(GateError) as direct:
+        restore_checkpoint(saved, contract=contract, code_hash=implementation_hash(), feature_origin=int(saved["feature_origin"]), processed_cutoff=int(saved["processed_cutoff"]), history_hash=saved["consumed_history_hash"], roster_hash=saved["consumed_roster_hash"])
+    assert direct.value.code == "CHECKPOINT_IDENTITY_MISMATCH"
+    assert direct.value.details == "code_hash"
+    with pytest.raises(GateError) as binding_error:
+        make_snapshot_binding(checked, saved, contract=contract, policy=policy)
+    assert binding_error.value.code == "CHECKPOINT_IDENTITY_MISMATCH"
+    assert binding_error.value.details == "code_hash"
+    current, current_binding = _binding_at_cutoff(checked, contract, policy, int(saved["processed_cutoff"]))
+    restored = resume_bound_state(checked, current, current_binding, contract=contract, policy=policy)
+    assert restored == current["state"]
+    assert current_binding["code_hash"] == implementation_hash()
+    legacy = dict(saved)
+    legacy["schema"] = "momentum_pullback.checkpoint.v2"
+    legacy["code_hash"] = implementation_hash()
+    with pytest.raises(GateError) as legacy_error:
+        resume_bound_state(checked, legacy, current_binding, contract=contract, policy=policy)
+    assert legacy_error.value.code == "CHECKPOINT_NOT_UPGRADABLE"

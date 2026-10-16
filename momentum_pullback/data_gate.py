@@ -202,8 +202,11 @@ def run_snapshot_smoke(manifest_path: Path, *, contract: Contract, policy: Snaps
 
 
 def make_snapshot_binding(checked: BuiltSnapshot, saved: dict[str, Any], *, contract: Contract, policy: SnapshotPolicy) -> dict[str, Any]:
-    """Bind the consumed prefix. snapshot_id is an index, not a resume key."""
+    """Bind the consumed prefix. An old implementation cannot receive a current binding."""
     _require_current_checkpoint(saved)
+    current = implementation_hash()
+    if saved.get("code_hash") != current:
+        raise GateError("CHECKPOINT_IDENTITY_MISMATCH", "code_hash")
     cutoff = int(saved["processed_cutoff"])
     identity = prefix_identity(checked, contract=contract, policy=policy, cutoff=cutoff)
     if saved.get("contract_hash") != contract.hash or saved.get("consumed_history_hash") != identity["normalized_history_hash"] or saved.get("consumed_roster_hash") != identity["roster_history_hash"]:
@@ -212,7 +215,7 @@ def make_snapshot_binding(checked: BuiltSnapshot, saved: dict[str, Any], *, cont
         "schema": BINDING_SCHEMA,
         "checkpoint_core_hash": _checkpoint_core_hash(saved),
         "contract_hash": contract.hash,
-        "code_hash": saved["code_hash"],
+        "code_hash": current,
         "processed_cutoff": cutoff,
         "snapshot_policy_hash": identity["snapshot_policy_hash"],
         "source_prefix": identity["source_prefix"],
@@ -244,9 +247,12 @@ def resume_bound_state(checked: BuiltSnapshot, saved: dict[str, Any], binding: d
         raise GateError("SNAPSHOT_PREFIX_MISMATCH", "CHECKPOINT_CORE")
     if binding.get("contract_hash") != contract.hash or binding.get("code_hash") != saved.get("code_hash"):
         raise GateError("SNAPSHOT_PREFIX_MISMATCH", "CONTRACT_OR_CODE")
+    current = implementation_hash()
+    if saved.get("code_hash") != current:
+        raise GateError("CHECKPOINT_IDENTITY_MISMATCH", "code_hash")
     if int(saved.get("processed_cutoff")) != cutoff:
         raise GateError("SNAPSHOT_PREFIX_MISMATCH", "CUTOFF")
-    return restore_checkpoint(saved, contract=contract, code_hash=saved["code_hash"], feature_origin=int(saved["feature_origin"]), processed_cutoff=cutoff, history_hash=identity["normalized_history_hash"], roster_hash=identity["roster_history_hash"])
+    return restore_checkpoint(saved, contract=contract, code_hash=current, feature_origin=int(saved["feature_origin"]), processed_cutoff=cutoff, history_hash=identity["normalized_history_hash"], roster_hash=identity["roster_history_hash"])
 
 
 def prefix_identity(checked: BuiltSnapshot, *, contract: Contract, policy: SnapshotPolicy, cutoff: int) -> dict[str, Any]:
