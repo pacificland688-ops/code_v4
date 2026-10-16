@@ -95,7 +95,7 @@ def test_cli_ready_partial_and_real_exits(monkeypatch, tmp_path, policy, parent,
     _redirect(monkeypatch, tmp_path)
     config = _write_contract(tmp_path / "synthetic_contract.yaml", parent, DATES[0], DATES[-1], DATES[-1])
     manifest = _package(tmp_path / "ready-src", policy, config, parent, "B-CLI-READY")
-    assert run_momentum_pullback.main(["build-snapshot", "--config", str(tmp_path / "synthetic_contract.yaml"), "--mode", "SYNTHETIC", "--source-manifest", str(manifest)]) == 0
+    assert run_momentum_pullback.main(["build-snapshot", "--config", str(tmp_path / "synthetic_contract.yaml"), "--policy", str(POLICY_PATH), "--mode", "SYNTHETIC", "--source-manifest", str(manifest)]) == 0
     built = json.loads(capsys.readouterr().out)
     assert built["status"] == "SYNTHETIC_SNAPSHOT_READY"
     assert built["outcomes_enabled"] is False
@@ -103,7 +103,7 @@ def test_cli_ready_partial_and_real_exits(monkeypatch, tmp_path, policy, parent,
     assert built["diagnostic_only"] is False
     snapshot = Path(built["artifact_dir"]) / "snapshot_manifest.json"
     report_hash_before = (Path(built["artifact_dir"]) / "data_gate_report.json").read_bytes()
-    assert run_momentum_pullback.main(["validate-snapshot", "--config", str(tmp_path / "synthetic_contract.yaml"), "--mode", "SYNTHETIC", "--input-manifest", str(snapshot), "--offline", "--outcomes-disabled"]) == 0
+    assert run_momentum_pullback.main(["validate-snapshot", "--config", str(tmp_path / "synthetic_contract.yaml"), "--policy", str(POLICY_PATH), "--mode", "SYNTHETIC", "--input-manifest", str(snapshot), "--offline", "--outcomes-disabled"]) == 0
     validated = json.loads(capsys.readouterr().out)
     assert validated["status"] == "SYNTHETIC_SNAPSHOT_READY"
     assert validated["checked_snapshot_manifest_sha256"]
@@ -111,20 +111,37 @@ def test_cli_ready_partial_and_real_exits(monkeypatch, tmp_path, policy, parent,
     assert not (Path(built["artifact_dir"]) / "validation_report.json").exists()
     unknown = flat_package(DATES, ["X"], close=10.0, factor=2.0, amount=12.5, amount_unit="THOUSAND_CNY", circ=3.0, circ_unit="TEN_THOUSAND_CNY", industry_from=DATES[-1], circ_dates=[DATES[-1]], industry_status="UNKNOWN")
     partial_manifest = commit_tables(tmp_path / "partial-src", unknown, policy=policy, contract=config, parent_hash=parent.hash, case_id="B-CLI-PARTIAL", amount_unit="THOUSAND_CNY", circ_unit="TEN_THOUSAND_CNY")
-    assert run_momentum_pullback.main(["build-snapshot", "--config", str(tmp_path / "synthetic_contract.yaml"), "--mode", "SYNTHETIC", "--source-manifest", str(partial_manifest), "--offline", "--outcomes-disabled"]) == 2
+    assert run_momentum_pullback.main(["build-snapshot", "--config", str(tmp_path / "synthetic_contract.yaml"), "--policy", str(POLICY_PATH), "--mode", "SYNTHETIC", "--source-manifest", str(partial_manifest), "--offline", "--outcomes-disabled"]) == 2
     partial = json.loads(capsys.readouterr().out)
     assert partial["status"] == "SYNTHETIC_SNAPSHOT_PARTIAL"
     assert partial["diagnostic_only"] is True
     assert partial["status"] != "DATA_READY_FOR_ENGINEERING"
     real_tables = flat_package(DATES, ["X"], close=10.0, factor=2.0, amount=12.5, amount_unit="THOUSAND_CNY", circ=3.0, circ_unit="TEN_THOUSAND_CNY", industry_from=DATES[-1], circ_dates=[DATES[-1]])
     real_manifest = commit_tables(tmp_path / "real-src", real_tables, policy=policy, contract=config, parent_hash=parent.hash, case_id="B-CLI-REAL", amount_unit="THOUSAND_CNY", circ_unit="TEN_THOUSAND_CNY", mode="REAL", review_kind="REAL_CERTIFIED", real_flag=True)
-    assert run_momentum_pullback.main(["build-snapshot", "--config", str(tmp_path / "synthetic_contract.yaml"), "--mode", "REAL", "--source-manifest", str(real_manifest)]) == 2
+    assert run_momentum_pullback.main(["build-snapshot", "--config", str(tmp_path / "synthetic_contract.yaml"), "--policy", str(POLICY_PATH), "--mode", "REAL", "--source-manifest", str(real_manifest)]) == 2
     refused = json.loads(capsys.readouterr().out)
     assert refused["reason"] == "REVIEW_RECEIPT_UNTRUSTED"
     assert not list(tmp_path.rglob("events.parquet"))
     assert not list(tmp_path.rglob("matching_matches.parquet"))
-    assert run_momentum_pullback.main(["engineering-smoke", "--config", str(tmp_path / "synthetic_contract.yaml"), "--mode", "SYNTHETIC", "--input-manifest", str(Path(partial["artifact_dir"]) / "snapshot_manifest.json")]) == 2
+    assert run_momentum_pullback.main(["engineering-smoke", "--config", str(tmp_path / "synthetic_contract.yaml"), "--policy", str(POLICY_PATH), "--mode", "SYNTHETIC", "--input-manifest", str(Path(partial["artifact_dir"]) / "snapshot_manifest.json")]) == 2
     smoke = json.loads(capsys.readouterr().out)
     assert smoke["status"] == "SYNTHETIC_SNAPSHOT_PARTIAL"
     assert smoke["outcomes_enabled"] is False
     assert not list(tmp_path.rglob("acceptance_summary.json"))
+
+
+def test_cli_default_policy_is_r1(monkeypatch, tmp_path, parent, capsys):
+    assert run_momentum_pullback.POLICY_PATH.name == "snapshot_policy_v0_1_r1.yaml"
+    loaded = load_snapshot_policy(run_momentum_pullback.POLICY_PATH)
+    assert loaded.payload["parameter_status"] == "PROPOSED"
+    assert loaded.payload["outcomes_enabled"] is False
+    assert loaded.payload["freeze_timestamp"] is None
+    _redirect(monkeypatch, tmp_path)
+    _write_contract(tmp_path / "synthetic_contract.yaml", parent, DATES[0], DATES[-1], DATES[-1])
+    config = load_contract(tmp_path / "synthetic_contract.yaml")
+    manifest = _package(tmp_path / "r1-src", loaded, config, parent, "C3-CLI-R1")
+    assert run_momentum_pullback.main(["build-snapshot", "--config", str(tmp_path / "synthetic_contract.yaml"), "--mode", "SYNTHETIC", "--source-manifest", str(manifest)]) == 0
+    built = json.loads(capsys.readouterr().out)
+    assert built["status"] == "SYNTHETIC_SNAPSHOT_READY"
+    assert built["outcomes_enabled"] is False
+    assert built["parameter_status"] == "PROPOSED"

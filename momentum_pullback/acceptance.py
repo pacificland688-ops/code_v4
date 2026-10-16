@@ -63,8 +63,8 @@ def run_hand_acceptance(contract: Contract, *, root: Path = ROOT) -> tuple[Path,
     return folder, summary
 
 
-def run_snapshot_acceptance(manifest_path: Path, contract: Contract, *, policy, mode: str, root: Path = ROOT, offline: bool = False, outcomes_disabled: bool = False, before_accept=None) -> tuple[Path, dict]:
+def run_snapshot_acceptance(manifest_path: Path, contract: Contract, *, policy, mode: str, root: Path = ROOT, offline: bool = False, outcomes_disabled: bool = False, before_accept=None, before_compute=None, before_final_commit=None) -> tuple[Path, dict]:
     """Read a validated snapshot and drive the existing engine. The hand panel is not rebuilt."""
     from momentum_pullback.data_gate import run_snapshot_smoke
 
-    return run_snapshot_smoke(manifest_path, contract=contract, policy=policy, mode=mode, root=root, offline=offline, outcomes_disabled=outcomes_disabled, before_accept=before_accept)
+    return run_snapshot_smoke(manifest_path, contract=contract, policy=policy, mode=mode, root=root, offline=offline, outcomes_disabled=outcomes_disabled, before_accept=before_accept, before_compute=before_compute, before_final_commit=before_final_commit)

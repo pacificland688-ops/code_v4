@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any, Callable
 
@@ -20,6 +21,9 @@ from momentum_pullback.source_bindings import INDEX_RELATIVE, SnapshotPolicy, So
 
 BINDING_SCHEMA = "momentum_pullback.snapshot_state_binding.v1"
 VALIDATION_SCHEMA = "momentum_pullback.snapshot_validation.v1"
+ACCEPTANCE_MARKER = "acceptance_summary.json"
+ACCEPTANCE_PENDING = "acceptance_summary.pending.json"
+HASH_INDEX_EXCLUSIONS = {"artifact_hashes.json", ACCEPTANCE_MARKER, ACCEPTANCE_PENDING}
 HAND_CASE_ID = "HAND-20x155"
 HAND_ORACLE = ROOT / "momentum_pullback/fixtures/hand_expected.json"
 CORE_KEYS = ("schema", "contract_hash", "code_hash", "feature_origin", "processed_cutoff", "consumed_history_hash", "consumed_roster_hash", "state_hash")
@@ -49,15 +53,23 @@ def build_checked_snapshot(manifest_path: Path, *, contract: Contract, policy: S
     return checked
 
 
-def validate_snapshot(manifest_path: Path, *, contract: Contract, policy: SnapshotPolicy, mode: str | None, root: Path = ROOT, offline: bool = False, outcomes_disabled: bool = False) -> tuple[Path, dict]:
+def validate_snapshot(manifest_path: Path, *, contract: Contract, policy: SnapshotPolicy, mode: str | None, root: Path = ROOT, offline: bool = False, outcomes_disabled: bool = False, before_reread: Callable[[Path], None] | None = None) -> tuple[Path, dict]:
     """Record a separate validation run. Do not rewrite the snapshot gate report."""
+    if mode not in {"SYNTHETIC", "REAL"}:
+        raise GateError("SNAPSHOT_MODE_MISMATCH", "MODE_REQUIRED")
+    frozen = _freeze_snapshot_inputs(manifest_path)
     checked = load_checked_snapshot(manifest_path, contract=contract, policy=policy, mode=mode)
+    _require_same_bytes(frozen, during_run=False)
+    if before_reread is not None:
+        before_reread(checked.folder)
+    _require_same_bytes(frozen, during_run=True)
     snapshot_report = checked.folder / "data_gate_report.json"
     snapshot_manifest = checked.folder / "snapshot_manifest.json"
     report_hash = file_hash(snapshot_report)
     manifest_hash = file_hash(snapshot_manifest)
     package = _reload_package(checked, contract, policy)
     folder, run_manifest = create_run(contract, "validate_snapshot", _consumer_inputs(checked, package, policy, []), root=root, logical_inputs=_constraints(mode, checked, offline, outcomes_disabled, manifest_hash))
+    _require_recorded(run_manifest, frozen)
     _copy_source_bindings(checked, folder)
     _write_policy_snapshot(folder, policy)
     report = {
@@ -94,9 +106,13 @@ def validate_snapshot(manifest_path: Path, *, contract: Contract, policy: Snapsh
     return folder, report
 
 
-def run_snapshot_smoke(manifest_path: Path, *, contract: Contract, policy: SnapshotPolicy, mode: str | None, root: Path = ROOT, offline: bool = False, outcomes_disabled: bool = False, before_accept: Callable[[Path], None] | None = None) -> tuple[Path, dict]:
+def run_snapshot_smoke(manifest_path: Path, *, contract: Contract, policy: SnapshotPolicy, mode: str | None, root: Path = ROOT, offline: bool = False, outcomes_disabled: bool = False, before_accept: Callable[[Path], None] | None = None, before_compute: Callable[[Path], None] | None = None, before_final_commit: Callable[[Path], None] | None = None) -> tuple[Path, dict]:
     """Drive the existing engine from the snapshot tables. Do not rebuild the panel."""
+    if mode not in {"SYNTHETIC", "REAL"}:
+        raise GateError("SNAPSHOT_MODE_MISMATCH", "MODE_REQUIRED")
+    frozen = _freeze_snapshot_inputs(manifest_path)
     checked = load_checked_snapshot(manifest_path, contract=contract, policy=policy, mode=mode)
+    _require_same_bytes(frozen, during_run=False)
     if checked.gate["status"] != "SYNTHETIC_SNAPSHOT_READY" or checked.manifest.get("diagnostic_only") is not False or "SYNTHETIC_ENGINEERING" not in checked.gate.get("permitted_consumers", []):
         return checked.folder, {
             "status": "SYNTHETIC_SNAPSHOT_PARTIAL",
@@ -116,39 +132,47 @@ def run_snapshot_smoke(manifest_path: Path, *, contract: Contract, policy: Snaps
     panel = checked.panel
     roster = checked.roster
     calendar = [int(value) for value in checked.calendar["trade_date"].tolist()]
-    features = build_features(panel, calendar, contract, roster=roster)
-    full = build_events(features, contract)
-    paired = lock_matches(full["events"], features, full["observations"], contract)
     case_id = str(package.manifest.get("case_id"))
     oracle = HAND_ORACLE if case_id == HAND_CASE_ID else None
-    if oracle is not None:
-        _assert_hand_oracle(full, paired, oracle)
-    cutoff = _resume_cutoff(calendar, contract)
-    prefix = build_features(panel.loc[panel.trade_date.le(cutoff)].copy(), calendar, contract, roster=roster, return_states=True)
-    early = build_events(prefix["features"], contract)
-    saved = checkpoint({"event_states": early["states"], "feature_states": prefix["states"]}, contract=contract, code_hash=implementation_hash(), feature_origin=calendar[0], processed_cutoff=cutoff, history_hash=input_history_hash(panel, calendar, cutoff, roster), roster_hash=roster_history_hash(roster, cutoff))
-    binding = make_snapshot_binding(checked, saved, contract=contract, policy=policy)
-    state = resume_bound_state(checked, saved, binding, contract=contract, policy=policy)
-    resumed_features = build_features(panel.loc[panel.trade_date.gt(cutoff)].copy(), calendar, contract, roster=roster, states=state["feature_states"])
-    _assert_replay(features.loc[features.trade_date.gt(cutoff)], resumed_features)
-    resumed = build_events(resumed_features, contract, states=state["event_states"])
-    _assert_replay(full["events"], resumed["events"])
-    if full["states"] != resumed["states"]:
-        raise GateError("SEGMENTED_STATE_MISMATCH")
-    resumed_pairs = lock_matches(resumed["events"], features, resumed["observations"], contract)
-    _assert_replay(paired["matches"], resumed_pairs["matches"])
-    status = _engineering_status(case_id, full, paired)
-    if status == "DATA_READY_FOR_ENGINEERING":
-        raise GateError("REVIEW_RECEIPT_UNTRUSTED", "DATA_READY_FOR_ENGINEERING")
     folder = None
+    stage = "INPUTS"
     try:
         extra = [oracle] if oracle is not None else []
         folder, run_manifest = create_run(contract, "snapshot_smoke", _consumer_inputs(checked, package, policy, extra), root=root, logical_inputs=_constraints(mode, checked, offline, outcomes_disabled, file_hash(checked.folder / "snapshot_manifest.json")))
+        _require_recorded(run_manifest, frozen)
+        verify_run_inputs(run_manifest)
+        if before_compute is not None:
+            before_compute(folder)
+        verify_run_inputs(run_manifest)
+        features = build_features(panel, calendar, contract, roster=roster)
+        full = build_events(features, contract)
+        paired = lock_matches(full["events"], features, full["observations"], contract)
+        if oracle is not None:
+            _assert_hand_oracle(full, paired, oracle)
+        cutoff = _resume_cutoff(calendar, contract)
+        prefix = build_features(panel.loc[panel.trade_date.le(cutoff)].copy(), calendar, contract, roster=roster, return_states=True)
+        early = build_events(prefix["features"], contract)
+        saved = checkpoint({"event_states": early["states"], "feature_states": prefix["states"]}, contract=contract, code_hash=implementation_hash(), feature_origin=calendar[0], processed_cutoff=cutoff, history_hash=input_history_hash(panel, calendar, cutoff, roster), roster_hash=roster_history_hash(roster, cutoff))
+        binding = make_snapshot_binding(checked, saved, contract=contract, policy=policy)
+        state = resume_bound_state(checked, saved, binding, contract=contract, policy=policy)
+        resumed_features = build_features(panel.loc[panel.trade_date.gt(cutoff)].copy(), calendar, contract, roster=roster, states=state["feature_states"])
+        _assert_replay(features.loc[features.trade_date.gt(cutoff)], resumed_features)
+        resumed = build_events(resumed_features, contract, states=state["event_states"])
+        _assert_replay(full["events"], resumed["events"])
+        if full["states"] != resumed["states"]:
+            raise GateError("SEGMENTED_STATE_MISMATCH")
+        resumed_pairs = lock_matches(resumed["events"], features, resumed["observations"], contract)
+        _assert_replay(paired["matches"], resumed_pairs["matches"])
+        verify_run_inputs(run_manifest)
+        status = _engineering_status(case_id, full, paired)
+        if status == "DATA_READY_FOR_ENGINEERING":
+            raise GateError("REVIEW_RECEIPT_UNTRUSTED", "DATA_READY_FOR_ENGINEERING")
         _copy_source_bindings(checked, folder)
         _write_policy_snapshot(folder, policy)
         if before_accept is not None:
             before_accept(folder)
         verify_run_inputs(run_manifest)
+        stage = "OUTPUTS"
         features.to_parquet(folder / "features.parquet", index=False)
         for name in ("events", "roots", "observations"):
             full[name].to_parquet(folder / f"{name}.parquet", index=False)
@@ -188,15 +212,24 @@ def run_snapshot_smoke(manifest_path: Path, *, contract: Contract, policy: Snaps
             summary["hand_event_oracle"] = "PASS"
             summary["hand_match_oracle"] = "PASS"
         write_json(folder / "data_gate_report.json", {"schema": "momentum_pullback.data_gate_report.v1", "status": status, "data_status": "SYNTHETIC_SNAPSHOT_READY", "event_status": full["status"], "matching_status": paired["status"], "mode": "SYNTHETIC", "integrity_status": "VALIDATED_SNAPSHOT_CONSUMER", "source_authority": checked.gate["source_authority"], "coverage_status": checked.gate["coverage_status"], "checked_snapshot_manifest_sha256": file_hash(checked.folder / "snapshot_manifest.json"), "outcomes_enabled": False, "network_requests": 0, "parameter_status": "PROPOSED"})
-        write_json(folder / "acceptance_summary.json", summary)
         verify_run_inputs(run_manifest)
+        stage = "HASH_INDEX"
         _write_artifact_hashes(folder)
         verify_run_inputs(run_manifest)
+        summary["artifact_hashes_sha256"] = file_hash(folder / "artifact_hashes.json")
+        stage = "ACCEPTANCE_MARKER"
+        write_json(folder / ACCEPTANCE_PENDING, summary)
+        if before_final_commit is not None:
+            before_final_commit(folder)
+        verify_run_inputs(run_manifest)
+        os.replace(folder / ACCEPTANCE_PENDING, folder / ACCEPTANCE_MARKER)
         return folder, summary
+    except OSError as error:
+        gate = GateError("ACCEPTANCE_COMMIT_FAILED", {"stage": stage, "reason": type(error).__name__})
+        _fail_smoke(folder, gate)
+        raise GateError(gate.code, {**gate.details, "artifact_dir": None if folder is None else str(folder)}) from error
     except GateError as error:
-        if folder is not None and not (folder / "acceptance_summary.json").exists():
-            details = error.details if isinstance(error.details, dict) else {"details": error.details}
-            write_json(folder / "blocked.json", {"status": "BLOCKED", "reason": error.code, "details": details, "outcomes_generated": False, "outcomes_enabled": False, "network_requests": 0})
+        _fail_smoke(folder, error)
         wrapped = error.details if isinstance(error.details, dict) else {"details": error.details}
         raise GateError(error.code, {**wrapped, "artifact_dir": None if folder is None else str(folder)}) from error
 
@@ -361,9 +394,80 @@ def _reload_package(checked: BuiltSnapshot, contract: Contract, policy: Snapshot
 def _consumer_inputs(checked: BuiltSnapshot, package: SourcePackage, policy: SnapshotPolicy, extra: list[Path]) -> list[Path]:
     source = Path(checked.manifest["source_manifest_path"])
     files = [checked.folder / "snapshot_manifest.json", source, package.input_root / package.manifest["review_receipt_ref"], Path(policy.source_path), ROOT / policy.payload["documents"][0]["path"], ROOT / INDEX_RELATIVE]
+    files.extend(checked.folder / spec["relative_path"] for spec in checked.manifest.get("artifacts", {}).values())
     files.extend(package.input_root / spec["relative_path"] for spec in package.manifest["tables"])
     files.extend(extra)
     return files
+
+
+def _freeze_snapshot_inputs(manifest_path: Path) -> dict[Path, str]:
+    """Hash the declared snapshot bytes before any feature computation."""
+    if manifest_path.name != "snapshot_manifest.json" or not manifest_path.is_file():
+        raise GateError("SOURCE_MANIFEST_INVALID", "SNAPSHOT_NOT_COMMITTED")
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as error:
+        raise GateError("SOURCE_MANIFEST_INVALID", "SNAPSHOT_JSON") from error
+    folder = manifest_path.parent
+    files = [manifest_path]
+    artifacts = manifest.get("artifacts", {})
+    if not isinstance(artifacts, dict):
+        raise GateError("SOURCE_MANIFEST_INVALID", "ARTIFACTS")
+    for name, spec in artifacts.items():
+        if not isinstance(spec, dict) or not isinstance(spec.get("relative_path"), str):
+            raise GateError("SNAPSHOT_CONTENT_CHANGED", str(name))
+        path = folder / spec["relative_path"]
+        if path.name != spec["relative_path"] or not path.is_file() or file_hash(path) != spec.get("sha256"):
+            raise GateError("SNAPSHOT_CONTENT_CHANGED", str(name))
+        files.append(path)
+    return {path.resolve(): file_hash(path) for path in files}
+
+
+def _require_same_bytes(frozen: dict[Path, str], *, during_run: bool) -> None:
+    code = "INPUT_CONTENT_CHANGED_DURING_RUN" if during_run else "SNAPSHOT_CONTENT_CHANGED"
+    for path, digest in frozen.items():
+        if not path.is_file() or file_hash(path) != digest:
+            raise GateError(code, path.name)
+
+
+def _require_recorded(run_manifest: dict, frozen: dict[Path, str]) -> None:
+    recorded = {Path(item["path"]).resolve(): item["sha256"] for item in run_manifest["inputs"]}
+    for path, digest in frozen.items():
+        if recorded.get(path) != digest:
+            raise GateError("INPUT_CONTENT_CHANGED_DURING_RUN", str(path))
+
+
+def _fail_smoke(folder: Path | None, error: GateError) -> None:
+    """Revoke this attempt's marker, then record the block. An existing summary is not a reason to skip."""
+    if folder is None:
+        return
+    for name in (ACCEPTANCE_MARKER, ACCEPTANCE_PENDING):
+        path = folder / name
+        if path.is_file():
+            path.unlink()
+    if (folder / "blocked.json").is_file():
+        return
+    details = error.details if isinstance(error.details, dict) else {"details": error.details}
+    write_json(folder / "blocked.json", {"status": "BLOCKED", "reason": error.code, "details": details, "outcomes_generated": False, "outcomes_enabled": False, "network_requests": 0})
+
+
+def read_committed_acceptance(folder: Path) -> dict:
+    """Accept only a final marker whose artifact index still matches the directory."""
+    if (folder / "blocked.json").is_file():
+        raise GateError("ACCEPTANCE_REVOKED", "BLOCKED")
+    pending = folder / ACCEPTANCE_PENDING
+    final = folder / ACCEPTANCE_MARKER
+    if pending.exists() or not final.is_file():
+        raise GateError("ACCEPTANCE_NOT_COMMITTED", "PENDING" if pending.exists() else "MISSING")
+    summary = json.loads(final.read_text(encoding="utf-8"))
+    index_path = folder / "artifact_hashes.json"
+    if not index_path.is_file() or file_hash(index_path) != summary.get("artifact_hashes_sha256"):
+        raise GateError("ACCEPTANCE_NOT_COMMITTED", "HASH_INDEX")
+    recorded = {item["path"]: item["sha256"] for item in json.loads(index_path.read_text(encoding="utf-8"))}
+    actual = {path.name: file_hash(path) for path in folder.iterdir() if path.is_file() and path.name not in HASH_INDEX_EXCLUSIONS}
+    if actual != recorded or summary.get("outcomes_enabled") is not False or summary.get("outcomes_generated") is not False:
+        raise GateError("ACCEPTANCE_NOT_COMMITTED", "ARTIFACT_MISMATCH")
+    return summary
 
 
 def _copy_source_bindings(checked: BuiltSnapshot, folder: Path | None = None) -> None:
@@ -389,7 +493,7 @@ def _write_policy_snapshot(folder: Path, policy: SnapshotPolicy) -> None:
 
 
 def _write_artifact_hashes(folder: Path) -> None:
-    rows = [{"path": path.name, "sha256": file_hash(path)} for path in sorted(folder.iterdir()) if path.is_file() and path.name != "artifact_hashes.json"]
+    rows = [{"path": path.name, "sha256": file_hash(path)} for path in sorted(folder.iterdir()) if path.is_file() and path.name not in HASH_INDEX_EXCLUSIONS]
     write_json(folder / "artifact_hashes.json", rows)
 
 

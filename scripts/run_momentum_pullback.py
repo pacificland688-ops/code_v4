@@ -27,7 +27,7 @@ EXIT_ZERO = {
     "MATCHING_UNEVALUABLE",
     "EVENTS_BUILT",
 }
-POLICY_PATH = ROOT / "configs/momentum_pullback/snapshot_policy_v0_1.yaml"
+POLICY_PATH = ROOT / "configs/momentum_pullback/snapshot_policy_v0_1_r1.yaml"
 
 
 def _snapshot_result(checked) -> dict:
