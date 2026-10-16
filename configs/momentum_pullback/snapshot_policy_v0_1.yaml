@@ -1,0 +1,44 @@
+schema: momentum_pullback.snapshot_policy.v1
+policy_id: momentum_pullback.snapshot_policy.v0_1
+status: PROPOSED_ENGINEERING_SPEC
+parameter_status: PROPOSED
+outcomes_enabled: false
+freeze_timestamp: null
+modes: [SYNTHETIC, REAL]
+real_review_index: momentum_pullback/evidence/approved_source_reviews.json
+date_only_announcement_policy:
+  id: DATE_ONLY_ANNOUNCEMENT_ASIA_SHANGHAI_END_OF_DAY
+  status: PROPOSED_NOT_APPLIED
+signal_clock:
+  synthetic_hand_case: "18:00:00+08:00"
+  timezone: Asia/Shanghai
+price_scale:
+  formula: ADJUSTED_EQUALS_RAW_TIMES_STORED_FACTOR
+  rtol: 0.00002
+  atol: 0.00002
+effective_interval:
+  normalized_convention: CLOSED_CLOSED
+  empty_to_means: OPEN_THROUGH_DECLARED_COVERAGE
+revision:
+  selection: MAXIMUM_DECLARED_ORDER
+  late_history: NEW_INPUT_VERSION_FULL_REPLAY
+units:
+  amount_cny:
+    factors: {CNY: 1, THOUSAND_CNY: 1000, TEN_THOUSAND_CNY: 10000}
+  circ_mv_cny:
+    factors: {CNY: 1, THOUSAND_CNY: 1000, TEN_THOUSAND_CNY: 10000}
+consumer_windows:
+  calendar_prices_lifecycle: FEATURE_ORIGIN_THROUGH_OUTPUT_END
+  membership_st: FEATURE_ORIGIN_THROUGH_OUTPUT_END
+  industry_circ_mv: OUTPUT_WINDOW_AND_REQUIRED_CROSS_SECTIONS
+  amount_adv20: NINETEEN_CERTIFIED_SESSIONS_BEFORE_OUTPUT_THROUGH_OUTPUT_END
+lifecycle:
+  supported: FIXED_TRACKING_SET_LISTED_AT_FEATURE_ORIGIN
+  unsupported_code: UNSUPPORTED_SECURITY_LIFECYCLE
+halt:
+  verified_full_day: VERIFIED_HALT_ZERO
+prefix:
+  future_only_append_keeps_prefix: true
+documents:
+- path: momentum_pullback/snapshot_contract_v0_1.md
+  sha256: 96aec98e9fcf397279bf16c2e372133ccf9fc93d9d085b0e2d10d9c3555ce405

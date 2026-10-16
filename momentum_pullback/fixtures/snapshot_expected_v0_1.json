@@ -1,0 +1,72 @@
+{
+  "schema": "momentum_pullback.snapshot_expected.v0_1",
+  "authority": "HAND_EXPECTED_ENGINEERING_ONLY",
+  "signal_cutoff": "2018-01-02T18:00:00+08:00",
+  "cases": {
+    "B-TIME-01": {
+      "business_keys": ["ts_code", "trade_date"],
+      "rows": [
+        {"ts_code": "X", "trade_date": 20180102, "revision_id": "1", "raw_close": 10.0, "available_at": "2018-01-02T17:00:00+08:00"},
+        {"ts_code": "X", "trade_date": 20180102, "revision_id": "2", "raw_close": 11.0, "available_at": "2018-01-02T19:00:00+08:00"}
+      ],
+      "expected_revision_id": "1",
+      "expected_raw_close": 10.0,
+      "late_only_rows": [
+        {"ts_code": "X", "trade_date": 20180102, "revision_id": "9", "raw_close": 99.0, "available_at": "2018-01-02T19:00:00+08:00"}
+      ],
+      "late_only_selected_rows": 0,
+      "rejected_available_at_columns": ["trade_date", "mtime", "reviewed_at"],
+      "rejected_error": "AVAILABLE_AT_SOURCE_REJECTED"
+    },
+    "B-REV-01": {
+      "legal_rows": [
+        {"ts_code": "X", "trade_date": 20180102, "revision_id": "1", "raw_close": 10.0, "available_at": "2018-01-02T16:00:00+08:00"},
+        {"ts_code": "X", "trade_date": 20180102, "revision_id": "2", "raw_close": 10.5, "available_at": "2018-01-02T17:00:00+08:00"},
+        {"ts_code": "X", "trade_date": 20180102, "revision_id": "3", "raw_close": 99.0, "available_at": "2018-01-02T19:00:00+08:00"}
+      ],
+      "expected_revision_id": "2",
+      "expected_raw_close": 10.5,
+      "duplicate_rows": [
+        {"ts_code": "X", "trade_date": 20180102, "revision_id": "1", "raw_close": 10.0, "available_at": "2018-01-02T17:00:00+08:00"},
+        {"ts_code": "X", "trade_date": 20180102, "revision_id": "1", "raw_close": 10.0, "available_at": "2018-01-02T17:00:00+08:00"}
+      ],
+      "duplicate_error": "DUPLICATE_OR_CONFLICTING_KEYS",
+      "ambiguous_rows": [
+        {"ts_code": "X", "trade_date": 20180102, "revision_id": "1", "raw_close": 10.0, "available_at": "2018-01-02T17:00:00+08:00"},
+        {"ts_code": "X", "trade_date": 20180102, "revision_id": "2", "raw_close": 12.0, "available_at": "2018-01-02T17:00:00+08:00"}
+      ],
+      "ambiguous_order": ["available_at"],
+      "ambiguous_error": "AMBIGUOUS_ASOF_REVISION"
+    },
+    "B-UNIT-01": {
+      "field": "amount_cny",
+      "conversions": [
+        {"unit": "CNY", "value": 10.0, "expected_cny": 10.0},
+        {"unit": "THOUSAND_CNY", "value": 12.5, "expected_cny": 12500.0},
+        {"unit": "TEN_THOUSAND_CNY", "value": 3.0, "expected_cny": 30000.0}
+      ],
+      "missing_unit": null,
+      "unknown_unit": "LOT",
+      "error": "SOURCE_UNIT_UNVERIFIED"
+    },
+    "B-AUTH-01": {
+      "synthetic_authority": "SYNTHETIC_DECLARATION",
+      "real_mode_error": "REVIEW_RECEIPT_UNTRUSTED",
+      "real_events_flag_error": "REVIEW_RECEIPT_UNTRUSTED",
+      "review_kind_mismatch_error": "SNAPSHOT_MODE_MISMATCH",
+      "scope_mismatch_error": "REVIEW_SCOPE_MISMATCH"
+    },
+    "B-LIFE-01": {
+      "supported": {"ts_code": "X", "listed_on": 20180102, "delisted_on": null},
+      "lists_after_origin": {"ts_code": "Y", "listed_on": 20180103, "delisted_on": null},
+      "delists_inside_window": {"ts_code": "Z", "listed_on": 20180102, "delisted_on": 20180102},
+      "error": "UNSUPPORTED_SECURITY_LIFECYCLE"
+    },
+    "B-PREFIX-01": {
+      "cutoff": 20180102,
+      "past_price": {"ts_code": "X", "trade_date": 20180102, "revision_id": "1", "raw_close": 10.0, "available_at": "2018-01-02T17:00:00+08:00"},
+      "future_price": {"ts_code": "X", "trade_date": 20180103, "revision_id": "1", "raw_close": 10.0, "available_at": "2018-01-03T17:00:00+08:00"},
+      "late_past_revision": {"ts_code": "X", "trade_date": 20180102, "revision_id": "2", "raw_close": 11.0, "available_at": "2018-01-03T17:00:00+08:00"}
+    }
+  }
+}

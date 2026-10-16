@@ -137,3 +137,103 @@
 ## 通过本清单之后才允许的下一步
 
 合成快照和数据门可以用明确标注 SYNTHETIC 的输入继续开发。真实 2018Q1 事件与固定配对仍要等来源认证和快照门都通过。收益分析继续等待单独的 P3 条件。
+
+## 获取入口、权限与责任（2026-10-16）
+
+本段只登记仓库里已经存在的读取入口。本批没有调用这些入口，没有下载，没有检查外部令牌是否有效。分类只用四档：`LOCAL_ABSENT`、`EXTERNAL_NOT_INVESTIGATED`、`PERMISSION_INSUFFICIENT`、`OBTAINED_PENDING_REVIEW`。仓库没有登记外部联系人。数据负责人准备隔离目录中的新版本；审核方认证后才能改变阻断状态。令牌权限本批未核查，所以不把任何一项写成 `PERMISSION_INSUFFICIENT`。
+
+### 1. PIT 成分
+
+| 项 | 内容 |
+| --- | --- |
+| 获取入口 | `TushareClient.get_index_weight`（`data/tushare_client.py`）写入 `data/parquet/index_weight`。`UniverseBuilder.load`（`data/universe.py`）把快照日加默认 1 日滞后当作 `available_date`。该滞后是代码参数，不是公告时间。本地分区仍缺 2015 和 2016。 |
+| 访问与授权 | 入口存在，但本批不调用、不读令牌。公告时点字段在本地缓存中不存在。外部接口能否提供带时区的公告时间和生效区间，尚未调查。 |
+| 责任角色 | 数据负责人提出隔离取得申请。审核方核对公告时间与生效区间。无外部联系人登记。 |
+| 所需日期 | 2015-01-05 至 2018-03-30 的每日应有名册，含调出后仍跟踪的证券。 |
+| 下一步 | 单独授权后，把成分事件写到隔离目录，保留 `available_at`、`effective_from`、`effective_to`。不覆盖 `data/parquet`，不用 `trade_date` 填公告时间。 |
+| 证据分类 | 公告时点与生效区间：`LOCAL_ABSENT`。外部能否提供：`EXTERNAL_NOT_INVESTIGATED`。 |
+| 结论 | 仍是 SOURCE_UNAVAILABLE / DATA_BLOCKED。2,477 行继续 ELIGIBILITY_UNKNOWN。 |
+
+### 2. 认证交易日历
+
+| 项 | 内容 |
+| --- | --- |
+| 获取入口 | `TushareClient.get_trade_cal` 与 `data/calendar.py` 的缓存目录 `data/parquet/trade_cal`。本地同时有 `cache.parquet` 和 `calendar.parquet`。 |
+| 访问与授权 | 两份文件都能读。没有任何一份带认证标记。本批不重新下载，也不在两份之间挑选胜者。 |
+| 责任角色 | 数据负责人保持两份文件只读。审核方指定哪一份是交易所会话日历，以及范围是否只含 SSE。 |
+| 所需日期 | 2015-01-05 至 2018-03-30。 |
+| 下一步 | 取得一份可哈希的认证市场日列表，与行情网格对照。短文件不能自证。 |
+| 证据分类 | 本地文件：已观察到，认证身份 `LOCAL_ABSENT`。哪一份可被认证：`EXTERNAL_NOT_INVESTIGATED`。 |
+| 结论 | 仍是 SOURCE_UNAVAILABLE / DATA_BLOCKED。 |
+
+### 3. 2015 年起的完整预热价格
+
+| 项 | 内容 |
+| --- | --- |
+| 获取入口 | `TushareClient.get_daily` 与现有 `data/parquet/prices_adj` 月分区。2015 年 12 个文件已在来源目录的输入清单中，合计 1,361 行，没有 `adj_factor` 列。 |
+| 访问与授权 | 本地不完整年可以读，但不能当作完整预热。本批不下载，不回写，不运行 `scripts/repair_adj_factor.py`。外部完整磁带是否可授权，尚未调查。 |
+| 责任角色 | 数据负责人只准备隔离新版本。审核方核对覆盖后才允许进入真实预热。 |
+| 所需日期 | 2015-01-05 至 2018-03-30，并且要对上将来的认证名册。 |
+| 下一步 | 在隔离目录形成可哈希的完整价格版本。2016–2018 的月文件不能代替 2015 年。 |
+| 证据分类 | 完整 2015 价格：`LOCAL_ABSENT`。外部补齐可能性：`EXTERNAL_NOT_INVESTIGATED`。 |
+| 结论 | 仍是 DATA_BLOCKED。 |
+
+### 4. 因子发布时点
+
+| 项 | 内容 |
+| --- | --- |
+| 获取入口 | 有限因子已经在 `prices_adj.adj_factor`。旁路读取入口是 `TushareClient.get_adj_factor` 落到 `data/parquet/adj_factor`。修复脚本 `scripts/repair_adj_factor.py` 不是本项的允许入口。 |
+| 访问与授权 | 尺度关系是本地观察，不是发布证明。旁路数值存在，处理方式仍是不采纳。发布时点外部来源尚未调查。 |
+| 责任角色 | 实施方保持原缓存和旁路隔离。审核方见到发布证据后才改变台账处理。 |
+| 所需日期 | 认证名册覆盖到的 2015-01-05 至 2018-03-30。输出窗口的 2,477 行仍待事前范围裁定。 |
+| 下一步 | 为因子取得 `announced_at` 或修订号，以及生效区间。不从价格比推导，不把旁路写回。 |
+| 证据分类 | 有限因子尺度：本地已观察，但发布时点 `LOCAL_ABSENT`。旁路采用：`LOCAL_ABSENT` 的认证。外部发布证据：`EXTERNAL_NOT_INVESTIGATED`。 |
+| 结论 | 无效行继续 ELIGIBILITY_UNKNOWN。旁路继续 UNVERIFIED_SIBLING_CACHE。 |
+
+### 5. ST 与上市状态
+
+| 项 | 内容 |
+| --- | --- |
+| 获取入口 | `TushareClient.get_namechange` 与 `get_stock_basic`。本地表是 `namechange` 和单文件 `stock_status`。 |
+| 访问与授权 | `ann_date` 只有日期。`stock_status` 没有历史轴。本批不把它们认证为 PIT ST，也不启用日期型公告政策。 |
+| 责任角色 | 数据负责人寻找专门的 ST 事件，而不是复用名称变更日。审核方认证。 |
+| 所需日期 | 2015-01-05 至 2018-03-30 的每个应有证券日。 |
+| 下一步 | 隔离取得带时区可用时点和生效区间的 ST / 上市事件。 |
+| 证据分类 | 已认证 PIT ST：`LOCAL_ABSENT`。外部事件表：`EXTERNAL_NOT_INVESTIGATED`。 |
+| 结论 | 仍是 SOURCE_UNAVAILABLE / DATA_BLOCKED。 |
+
+### 6. 全天停牌
+
+| 项 | 内容 |
+| --- | --- |
+| 获取入口 | `TushareClient.get_suspend` 写入 `data/parquet/suspend_status`。2015 年本地月份不完整。 |
+| 访问与授权 | 本地行没有按本合同词汇核对过的全天标志，也没有发布时间。本批不把缺失月份解释成没有停牌。 |
+| 责任角色 | 数据负责人补充分月证据或明确缺失原因。审核方认定全天标志后，才允许派生成交额零。 |
+| 所需日期 | 2015-01-05 至 2018-03-30。成交额消费者另按输出前 19 个市场日起算，这不降低停牌认证要求。 |
+| 下一步 | 取得能区分全天与部分停牌、且带可用时点的事件。未验证行不填零。 |
+| 证据分类 | 已验证全天停牌：`LOCAL_ABSENT`。外部分类字段：`EXTERNAL_NOT_INVESTIGATED`。 |
+| 结论 | 仍是 SOURCE_UNAVAILABLE / DATA_BLOCKED。 |
+
+### 7. 行业
+
+| 项 | 内容 |
+| --- | --- |
+| 获取入口 | `TushareClient.get_industry` 与本地 `industry_member`。年份分区从 2016 开始，本地没有 2015。 |
+| 访问与授权 | `effective_date` 存在，`available_at` 不存在。快照政策只把行业要求放在输出窗口，这不把 2015 的空缺变成已认证，也不缩短价格预热。 |
+| 责任角色 | 数据负责人按消费者窗口准备输出期行业事件。审核方核对端点约定。 |
+| 所需日期 | 真实匹配至少需要 2018-01-01 至 2018-03-30。2015 预热不要求行业。 |
+| 下一步 | 为输出窗口取得可用时点和生效区间。不把 `effective_date` 提前到信号截止之前使用。 |
+| 证据分类 | 2015 分区：`LOCAL_ABSENT`。输出窗口的可用时点：`LOCAL_ABSENT`。外部认证件：`EXTERNAL_NOT_INVESTIGATED`。 |
+| 结论 | 仍是 SOURCE_UNAVAILABLE / DATA_BLOCKED。 |
+
+### 8. 流通市值与成交额
+
+| 项 | 内容 |
+| --- | --- |
+| 获取入口 | `TushareClient.get_daily_basic` 对应 `daily_basic.circ_mv`。`prices_raw.amount` 在价格月文件中。两者都没有单位元数据。 |
+| 访问与授权 | 数值可以读到。单位和可用时点不能从列名猜出，也不能乘一个未写入政策的常数。本批政策里的 CNY / 千元 / 万元倍率只适用于已经声明单位的合成来源，不套用到这份公共缓存。 |
+| 责任角色 | 数据负责人取得单位说明和可用时点。审核方确认后才允许换算成 CNY。 |
+| 所需日期 | 市值覆盖输出窗口。成交额覆盖输出起点前 19 个认证市场日至输出终点。价格预热不因这两项缺失而失效。 |
+| 下一步 | 在隔离字段中记录单位和 `available_at`。不按文件时间填可用时点。 |
+| 证据分类 | 单位与时点：`LOCAL_ABSENT`。供应商单位说明：`EXTERNAL_NOT_INVESTIGATED`。数值本身不是 `OBTAINED_PENDING_REVIEW`，因为缺单位就不能进入认证字段。 |
+| 结论 | 仍是 SOURCE_UNAVAILABLE / DATA_BLOCKED。 |
