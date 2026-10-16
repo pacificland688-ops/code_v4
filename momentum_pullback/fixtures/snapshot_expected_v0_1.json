@@ -67,6 +67,63 @@
       "past_price": {"ts_code": "X", "trade_date": 20180102, "revision_id": "1", "raw_close": 10.0, "available_at": "2018-01-02T17:00:00+08:00"},
       "future_price": {"ts_code": "X", "trade_date": 20180103, "revision_id": "1", "raw_close": 10.0, "available_at": "2018-01-03T17:00:00+08:00"},
       "late_past_revision": {"ts_code": "X", "trade_date": 20180102, "revision_id": "2", "raw_close": 11.0, "available_at": "2018-01-03T17:00:00+08:00"}
+    },
+    "B-SNAP-01": {
+      "stored_factor": 2.0,
+      "raw_close": 5.0,
+      "expected_adj_close": 10.0,
+      "amount_unit": "THOUSAND_CNY",
+      "amount_value": 12.5,
+      "expected_amount_cny": 12500.0,
+      "circ_mv_unit": "TEN_THOUSAND_CNY",
+      "circ_mv_value": 3.0,
+      "expected_circ_mv_cny": 30000.0,
+      "quality_status": "SYNTHETIC_SNAPSHOT_READY",
+      "selection_reason": "ASOF_MAXIMUM_DECLARED_ORDER",
+      "price_derivation": "ADJUSTED_EQUALS_RAW_TIMES_STORED_FACTOR"
+    },
+    "B-HAND-01": {
+      "stored_factor": 2.0,
+      "amount_unit": "CNY",
+      "amount_value": 100000000.0,
+      "circ_mv_unit": "CNY",
+      "circ_mv_value": 1000000000.0,
+      "quality_status": "SYNTHETIC_SNAPSHOT_READY",
+      "cells": [
+        {"ts_code": "A", "trade_date": 20180102, "adj_open": 12.0, "adj_high": 12.1, "adj_low": 10.1, "adj_close": 12.0, "raw_close": 6.0, "amount_cny": 100000000.0, "circ_mv_cny": 1000000000.0, "industry_code": "SYNTHETIC_INDUSTRY", "price_status": "TRADED"},
+        {"ts_code": "E", "trade_date": 20180102, "adj_open": 10.0, "adj_high": 10.0, "adj_low": 10.0, "adj_close": 10.0, "raw_close": 5.0, "amount_cny": 100000000.0, "circ_mv_cny": 1000000000.0, "industry_code": "SYNTHETIC_INDUSTRY", "price_status": "TRADED"}
+      ]
+    },
+    "B-PRICE-01": {
+      "duplicate_error": "DUPLICATE_OR_CONFLICTING_KEYS",
+      "key_mismatch_error": "RAW_ADJUSTED_KEY_SET_MISMATCH",
+      "ohlc_error": "OHLC_RELATION_INVALID",
+      "scale_error": "ADJUSTED_PRICE_SCALE_MISMATCH",
+      "factor_missing_error": "ADJUSTMENT_FACTOR_MISSING",
+      "nonpositive_error": "NONFINITE_OR_NONPOSITIVE_PRICE",
+      "forbidden_status": "DATA_READY_FOR_ENGINEERING"
+    },
+    "B-GRID-01": {"error": "SNAPSHOT_COVERAGE_INCOMPLETE"},
+    "B-CAL-01": {"error": "CERTIFIED_CALENDAR_MISMATCH"},
+    "B-HALT-01": {
+      "derivation": "VERIFIED_HALT_ZERO",
+      "amount_cny": 0.0,
+      "price_status": "VERIFIED_FULL_DAY_HALT",
+      "late_does_not_zero": true
+    },
+    "B-HASH-01": {"error": "SNAPSHOT_CONTENT_CHANGED"},
+    "B-WRITE-01": {"unreadable": "SNAPSHOT_NOT_COMMITTED"},
+    "B-COV-01": {
+      "warmup_industry_required": false,
+      "quality_status": "SYNTHETIC_SNAPSHOT_READY",
+      "explicit_unknown_status": "SYNTHETIC_SNAPSHOT_PARTIAL"
+    },
+    "B-PIT-01": {
+      "member_dates": [20180102, 20180104],
+      "gap_date": 20180103,
+      "not_yet_effective_date": 20180102,
+      "not_yet_available_date": 20180102,
+      "reentry_date": 20180104
     }
   }
 }
