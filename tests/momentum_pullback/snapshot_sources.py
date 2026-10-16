@@ -93,7 +93,28 @@ def _bundle(dates, raw_rows, adj_rows, amount_rows, circ_rows, membership, st_ro
     }
 
 
-def commit_tables(directory: Path, tables: dict[str, list[dict]], *, policy, contract: Contract, parent_hash: str, case_id: str, amount_unit: str = "CNY", circ_unit: str = "CNY", calendar_dates: list[int] | None = None, roster_codes: list[str] | None = None, mode: str = "SYNTHETIC", review_kind: str = "SYNTHETIC_DECLARATION", real_flag: bool = False) -> Path:
+def _primary_key(table_id: str, overrides: dict[str, list[str]] | None) -> list[str]:
+    defaults = {
+        "calendar": ["trade_date"],
+        "roster": ["trade_date", "ts_code"],
+        "lifecycle": ["ts_code"],
+        "prices_raw": ["ts_code", "trade_date", "revision_id"],
+        "prices_adj": ["ts_code", "trade_date", "revision_id"],
+        "amount": ["ts_code", "trade_date", "revision_id"],
+        "circ_mv": ["ts_code", "trade_date", "revision_id"],
+        "halts": ["ts_code", "trade_date", "revision_id"],
+        "membership": ["ts_code", "effective_from", "revision_id"],
+        "st_status": ["ts_code", "effective_from", "revision_id"],
+        "industry": ["ts_code", "effective_from", "revision_id"],
+    }
+    if overrides and table_id in overrides:
+        return list(overrides[table_id])
+    if table_id not in defaults:
+        raise KeyError(table_id)
+    return list(defaults[table_id])
+
+
+def commit_tables(directory: Path, tables: dict[str, list[dict]], *, policy, contract: Contract, parent_hash: str, case_id: str, amount_unit: str = "CNY", circ_unit: str = "CNY", calendar_dates: list[int] | None = None, roster_codes: list[str] | None = None, mode: str = "SYNTHETIC", review_kind: str = "SYNTHETIC_DECLARATION", real_flag: bool = False, primary_keys: dict[str, list[str]] | None = None) -> Path:
     directory.mkdir(parents=True, exist_ok=True)
     for row in tables["calendar"]:
         row["declaration_ref"] = case_id
@@ -141,7 +162,7 @@ def commit_tables(directory: Path, tables: dict[str, list[dict]], *, policy, con
         "calendar_dates": calendar_dates,
         "roster_codes": roster_codes,
         "review_receipt_ref": "receipt.json",
-        "tables": [{"table_id": table_id, "relative_path": f"{table_id}.json", "sha256": hashes[table_id], "primary_key": ["ts_code", "trade_date", "revision_id"], "fields": fields[table_id]} for table_id in tables],
+        "tables": [{"table_id": table_id, "relative_path": f"{table_id}.json", "sha256": hashes[table_id], "primary_key": _primary_key(table_id, primary_keys), "fields": fields[table_id]} for table_id in tables],
     }
     manifest_path = directory / "source_manifest.json"
     manifest_bytes = json.dumps(manifest, ensure_ascii=False, separators=(",", ":")).encode("utf-8")

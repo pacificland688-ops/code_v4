@@ -100,6 +100,16 @@ def load_snapshot_policy(path: Path, *, root: Path = ROOT) -> SnapshotPolicy:
     document = root / documents[0]["path"]
     if not document.is_file() or file_hash(document) != documents[0].get("sha256"):
         raise GateError("SNAPSHOT_POLICY_INVALID", documents[0].get("path"))
+    if payload.get("policy_id") == "momentum_pullback.snapshot_policy.v0_1_r1":
+        if payload.get("halt", {}).get("selection") != "ASOF_THEN_KNOWN_FULL_DAY" or payload.get("coverage_rule") != "VALUE_AND_EFFECTIVE_INTERVAL":
+            raise GateError("SNAPSHOT_POLICY_INVALID", "r1_facts")
+        if payload.get("lineage", {}).get("primary_key") != "DECLARED_SOURCE_KEY" or payload.get("acceptance", {}).get("marker") != "acceptance_summary.json":
+            raise GateError("SNAPSHOT_POLICY_INVALID", "r1_lineage_or_acceptance")
+        if payload.get("checkpoint", {}).get("code_identity") != "CURRENT_IMPLEMENTATION_HASH":
+            raise GateError("SNAPSHOT_POLICY_INVALID", "r1_checkpoint")
+        reports = payload.get("report_schemas", {})
+        if reports.get("coverage") != "momentum_pullback.coverage_report.v2" or reports.get("v1_complete_is_not_r1_coverage") is not True:
+            raise GateError("SNAPSHOT_POLICY_INVALID", "r1_reports")
     return SnapshotPolicy(payload, str(path.resolve()), _sha256(raw))
 
 
@@ -249,6 +259,20 @@ def source_history_prefix(prices: pd.DataFrame, events: pd.DataFrame, calendar: 
     })
 
 
+def _require_primary_key(spec: dict[str, Any], frame: pd.DataFrame) -> None:
+    """The declared key must exist on the table. A missing column is not filled with the target date."""
+    key = spec.get("primary_key")
+    table = spec.get("table_id")
+    if not isinstance(key, list) or not key or any(not isinstance(column, str) or not column for column in key):
+        raise GateError("SOURCE_MANIFEST_INVALID", {"reason": "PRIMARY_KEY_UNDECLARED", "table": table})
+    if frame.empty:
+        return
+    missing = [column for column in key if column not in frame.columns]
+    if missing:
+        raise GateError("SOURCE_MANIFEST_INVALID", {"reason": "PRIMARY_KEY_COLUMN_MISSING", "table": table, "columns": missing})
+    unique_keys(frame, key, str(table))
+
+
 def _read_table(path: Path, declared_hash: str) -> pd.DataFrame:
     before = path.read_bytes()
     if _sha256(before) != declared_hash:
@@ -320,7 +344,9 @@ def load_source_package(manifest_path: Path, *, policy: SnapshotPolicy, contract
                 if field.get("scale_to_canonical", factors[field["unit"]]) != factors[field["unit"]]:
                     raise GateError("SOURCE_MANIFEST_INVALID", "SCALE_MISMATCH")
         path = resolve_declared_path(input_root, spec["relative_path"], allowed_roots)
-        tables[spec["table_id"]] = _read_table(path, spec["sha256"])
+        frame = _read_table(path, spec["sha256"])
+        _require_primary_key(spec, frame)
+        tables[spec["table_id"]] = frame
     receipt_path = resolve_declared_path(input_root, manifest["review_receipt_ref"], allowed_roots)
     receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
     authority = _check_receipt(receipt, manifest, _sha256(manifest_bytes), policy)

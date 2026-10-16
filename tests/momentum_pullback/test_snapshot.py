@@ -89,7 +89,7 @@ def test_minimal_conversion_matches_the_hand_numbers(tmp_path, policy, parent, e
     lineage = built.lineage.loc[lambda frame: frame.ts_code.eq("X") & frame.trade_date.eq(DATES[-1]) & frame.field_group.eq("price_adj")].iloc[0]
     assert lineage.selection_reason == case["selection_reason"]
     assert lineage.derivation == case["price_derivation"]
-    assert lineage.source_primary_key == f"ts_code=X|trade_date={DATES[-1]}|revision_id=1"
+    assert json.loads(lineage.source_primary_key) == {"ts_code": "X", "trade_date": DATES[-1], "revision_id": "1"}
     assert lineage.source_file_sha256 == file_hash(manifest.parent / "prices_adj.json")
     warmup = built.panel.loc[built.panel.trade_date.eq(DATES[0])].iloc[0]
     assert warmup.price_status == "TRADED" and pd.isna(warmup.industry_code) and pd.isna(warmup.industry_available_at)

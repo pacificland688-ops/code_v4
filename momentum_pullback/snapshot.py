@@ -26,8 +26,8 @@ from momentum_pullback.source_bindings import (
 )
 
 SNAPSHOT_SCHEMA = "momentum_pullback.snapshot.v1"
-COVERAGE_SCHEMA = "momentum_pullback.coverage_report.v1"
-GATE_SCHEMA = "momentum_pullback.data_gate_report.v1"
+COVERAGE_SCHEMA = "momentum_pullback.coverage_report.v2"
+GATE_SCHEMA = "momentum_pullback.data_gate_report.v2"
 REQUIRED_TABLES = (
     "calendar", "roster", "lifecycle", "prices_raw", "prices_adj", "amount", "circ_mv",
     "membership", "st_status", "industry", "halts",
@@ -79,6 +79,8 @@ class BuiltSnapshot:
 
 def _blank(value: Any) -> bool:
     if value is None:
+        return True
+    if isinstance(value, str) and value.strip() == "":
         return True
     try:
         return bool(pd.isna(value))
@@ -186,11 +188,44 @@ def _records(frame: pd.DataFrame) -> dict[tuple[str, int], Any]:
     return {(str(row.ts_code), int(row.trade_date)): row for row in frame.itertuples(index=False)}
 
 
-def _line(code: str, date: int, group: str, table: str, digest: str, revision: Any, available: Any, reason: str, unit: str | None, scale: int | None, derivation: str) -> dict[str, Any]:
-    key = "" if not code else f"ts_code={code}|trade_date={date}|revision_id={'' if _blank(revision) else revision}"
+def _primary_columns(package: SourcePackage, table: str) -> list[str]:
+    for spec in package.manifest["tables"]:
+        if spec["table_id"] == table:
+            key = spec.get("primary_key")
+            if not isinstance(key, list) or not key or any(not isinstance(column, str) or not column for column in key):
+                raise GateError("SOURCE_MANIFEST_INVALID", {"reason": "PRIMARY_KEY_UNDECLARED", "table": table})
+            return list(key)
+    raise GateError("SOURCE_MANIFEST_INVALID", {"reason": "PRIMARY_KEY_UNDECLARED", "table": table})
+
+
+def _json_key(value: Any) -> Any:
+    if isinstance(value, (bool, np.bool_)):
+        return bool(value)
+    if isinstance(value, (int, np.integer)):
+        return int(value)
+    if isinstance(value, str):
+        return value
+    raise GateError("SOURCE_MANIFEST_INVALID", {"reason": "PRIMARY_KEY_UNRESOLVED", "value": str(value)})
+
+
+def _source_key(record: Any, columns: list[str]) -> str:
+    """Serialize the selected row's declared key. The target date is not part of an event key."""
+    fields = getattr(record, "_fields", None)
+    payload = {}
+    for column in columns:
+        if fields is not None and column not in fields:
+            raise GateError("SOURCE_MANIFEST_INVALID", {"reason": "PRIMARY_KEY_UNRESOLVED", "column": column})
+        value = getattr(record, column)
+        if _blank(value):
+            raise GateError("SOURCE_MANIFEST_INVALID", {"reason": "PRIMARY_KEY_UNRESOLVED", "column": column})
+        payload[column] = _json_key(value)
+    return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+
+def _line(code: str, date: int, group: str, table: str, digest: str, revision: Any, available: Any, reason: str, unit: str | None, scale: int | None, derivation: str, primary_key: str = "") -> dict[str, Any]:
     return {
         "ts_code": code, "trade_date": int(date), "field_group": group, "source_table": table,
-        "source_file_sha256": digest, "source_primary_key": key, "revision_id": "" if _blank(revision) else str(revision),
+        "source_file_sha256": digest, "source_primary_key": primary_key, "revision_id": "" if _blank(revision) else str(revision),
         "available_at": "" if _blank(available) else _stamp(available), "selection_reason": reason,
         "unit": unit or "", "scale_to_canonical": "" if scale is None else str(int(scale)), "derivation": derivation,
     }
@@ -353,9 +388,9 @@ def normalize_package(package: SourcePackage, contract: Contract, policy: Snapsh
         halts["ts_code"] = halts["ts_code"].astype(str)
         if not halts["halt_scope"].isin(["FULL_DAY", "PARTIAL_DAY"]).all():
             raise GateError("SOURCE_MANIFEST_INVALID", "HALT_SCOPE")
-    full_halts = halts.loc[halts["halt_scope"].eq("FULL_DAY")] if not halts.empty else halts
-    halt_source = _keyset(full_halts)
-    halt_map = _records(_select_daily(full_halts, cutoffs) if not full_halts.empty else full_halts)
+    halt_source = _keyset(halts)
+    selected_halts = _select_daily(halts, cutoffs) if not halts.empty else halts
+    halt_map = _records(selected_halts)
     missing = sorted(key for key in expected if key not in raw_source and key not in halt_source and key not in raw_map)
     if missing:
         missing_codes = sorted({code for code, _ in missing})
@@ -365,9 +400,11 @@ def normalize_package(package: SourcePackage, contract: Contract, policy: Snapsh
     roles: dict[tuple[str, int], str] = {}
     for key in sorted(expected):
         code, date = key
-        if key in halt_map and key in raw_map:
+        halt_record = halt_map.get(key)
+        verified_halt = halt_record is not None and halt_record.fact_status == "KNOWN" and halt_record.halt_scope == "FULL_DAY"
+        if verified_halt and key in raw_map:
             raise GateError("SOURCE_MANIFEST_INVALID", {"reason": "HALT_TRADE_CONFLICT", "ts_code": code, "trade_date": date})
-        if key in halt_map:
+        if verified_halt:
             roles[key] = "HALT"
         elif key in raw_map and raw_map[key].fact_status == "KNOWN" and getattr(raw_map[key], "price_status", "TRADED") == "TRADED":
             if key in adj_map and adj_map[key].fact_status == "KNOWN":
@@ -423,11 +460,16 @@ def normalize_package(package: SourcePackage, contract: Contract, policy: Snapsh
     amount_digest, circ_digest = _file_hash(package, "amount"), _file_hash(package, "circ_mv")
     membership_digest, st_digest, industry_digest = _file_hash(package, "membership"), _file_hash(package, "st_status"), _file_hash(package, "industry")
     halt_digest = _file_hash(package, "halts")
+    raw_key, adj_key = _primary_columns(package, "prices_raw"), _primary_columns(package, "prices_adj")
+    amount_key, circ_key, halt_key = _primary_columns(package, "amount"), _primary_columns(package, "circ_mv"), _primary_columns(package, "halts")
+    membership_key, st_key, industry_key = _primary_columns(package, "membership"), _primary_columns(package, "st_status"), _primary_columns(package, "industry")
+    field_gaps: list[dict[str, Any]] = []
 
-    def _note(kind: str, field: str, key: tuple[str, int]) -> None:
+    def _note(kind: str, field: str, key: tuple[str, int], reason: str) -> None:
         unknown_keys.add(key)
         unknown_fields.add(field)
         field_unknown[kind] += 1
+        field_gaps.append({"ts_code": key[0], "trade_date": int(key[1]), "field": field, "reason": reason})
 
     def _daily_value(key: tuple[str, int], mapping: dict, source: set, required: bool, column: str, canonical: str, declared: str, policy_field: str) -> tuple[float | None, str | None, str | None, str, int | None, Any]:
         code, date = key
@@ -437,7 +479,7 @@ def normalize_package(package: SourcePackage, contract: Contract, policy: Snapsh
                 if record.unit != declared and record.fact_status != "UNKNOWN":
                     raise GateError("SOURCE_UNIT_UNVERIFIED", {"field": canonical, "unit": record.unit})
                 if required:
-                    _note("amount_adv20" if canonical == "amount_cny" else "industry_circ_mv", canonical, key)
+                    _note("amount_adv20" if canonical == "amount_cny" else "industry_circ_mv", canonical, key, "EXPLICIT_UNKNOWN")
                 return None, None, None, "EXPLICIT_UNKNOWN", None, record
             value = convert_to_cny(getattr(record, column), declared, policy_field, policy)
             scale = int(policy.payload["units"][policy_field]["factors"][declared])
@@ -445,9 +487,45 @@ def normalize_package(package: SourcePackage, contract: Contract, policy: Snapsh
         if not required:
             return None, None, None, "NOT_REQUIRED", None, None
         if key in source:
-            _note("amount_adv20" if canonical == "amount_cny" else "industry_circ_mv", canonical, key)
+            _note("amount_adv20" if canonical == "amount_cny" else "industry_circ_mv", canonical, key, "LATE_EXCLUDED")
             return None, None, None, "LATE_EXCLUDED", None, None
         raise GateError("SNAPSHOT_COVERAGE_INCOMPLETE", {"reason": canonical.upper(), "ts_code": code, "trade_date": date, "missing_codes": [code]})
+
+    def _industry_gap(chosen: Any, trade_date: int) -> str | None:
+        if chosen is None:
+            return "LATE_EXCLUDED"
+        if chosen.fact_status == "UNKNOWN":
+            return "EXPLICIT_UNKNOWN"
+        end = _optional_int(chosen.effective_to)
+        if int(chosen.effective_from) > trade_date:
+            return "NOT_YET_EFFECTIVE"
+        if end is not None and trade_date > end:
+            return "INTERVAL_ENDED"
+        if _blank(chosen.industry_code):
+            return "VALUE_ABSENT"
+        return None
+
+    def _apply_industry(row: dict, lineage_rows: list, code: str, trade_date: int, key: tuple[str, int], chosen: Any, required: bool, digest: str, columns: list[str]) -> None:
+        gap = _industry_gap(chosen, trade_date) if required or chosen is not None else None
+        if not required:
+            if chosen is not None and gap is None:
+                end = _optional_int(chosen.effective_to)
+                row.update(industry_code=chosen.industry_code, industry_available_at=_stamp(chosen.available_at), industry_effective_from=int(chosen.effective_from), industry_effective_to=end if end is not None else pd.NA)
+                lineage_rows.append(_line(code, trade_date, "industry", "industry", digest, chosen.revision_id, chosen.available_at, "NOT_REQUIRED", None, None, "CLOSED_CLOSED_INTERVAL", _source_key(chosen, columns)))
+            else:
+                lineage_rows.append(_line(code, trade_date, "industry", "industry", digest, None, None, "NOT_REQUIRED", None, None, "NOT_REQUIRED"))
+            return
+        if gap is not None:
+            _note("industry_circ_mv", "industry", key, gap)
+            primary = "" if chosen is None else _source_key(chosen, columns)
+            lineage_rows.append(_line(code, trade_date, "industry", "industry", digest, None if chosen is None else chosen.revision_id, None if chosen is None else chosen.available_at, gap, None, None, "FIELD_UNKNOWN", primary))
+            if chosen is not None:
+                end = _optional_int(chosen.effective_to)
+                row.update(industry_code=pd.NA, industry_available_at=_stamp(chosen.available_at), industry_effective_from=int(chosen.effective_from), industry_effective_to=end if end is not None else pd.NA)
+            return
+        end = _optional_int(chosen.effective_to)
+        row.update(industry_code=chosen.industry_code, industry_available_at=_stamp(chosen.available_at), industry_effective_from=int(chosen.effective_from), industry_effective_to=end if end is not None else pd.NA)
+        lineage_rows.append(_line(code, trade_date, "industry", "industry", digest, chosen.revision_id, chosen.available_at, "ASOF_MAXIMUM_DECLARED_ORDER", None, None, "CLOSED_CLOSED_INTERVAL", _source_key(chosen, columns)))
 
     for key in sorted(expected):
         code, date = key
@@ -457,7 +535,9 @@ def normalize_package(package: SourcePackage, contract: Contract, policy: Snapsh
         if role == "HALT":
             record = halt_map[key]
             row.update(price_status="VERIFIED_FULL_DAY_HALT", price_available_at=_stamp(record.available_at), price_revision_id=str(record.revision_id), amount_cny=0.0, amount_available_at=_stamp(record.available_at), amount_unit="", amount_derivation="VERIFIED_HALT_ZERO")
-            lineage.append(_line(code, date, "halt", "halts", halt_digest, record.revision_id, record.available_at, "ASOF_MAXIMUM_DECLARED_ORDER", None, None, "VERIFIED_HALT_ZERO"))
+            halt_primary = _source_key(record, halt_key)
+            lineage.append(_line(code, date, "halt", "halts", halt_digest, record.revision_id, record.available_at, "ASOF_MAXIMUM_DECLARED_ORDER", None, None, "VERIFIED_HALT_ZERO", halt_primary))
+            lineage.append(_line(code, date, "amount", "halts", halt_digest, record.revision_id, record.available_at, "ASOF_MAXIMUM_DECLARED_ORDER", None, None, "VERIFIED_HALT_ZERO", halt_primary))
         elif role == "TRADED":
             record = joined[key]
             raw_record, adj_record = raw_map[key], adj_map[key]
@@ -466,51 +546,54 @@ def normalize_package(package: SourcePackage, contract: Contract, policy: Snapsh
             for column in PRICE_COLUMNS:
                 row[f"raw_{column}"] = float(getattr(record, column))
                 row[f"adj_{column}"] = float(getattr(record, f"adj_{column}"))
-            lineage.append(_line(code, date, "price_raw", "prices_raw", raw_digest, raw_record.revision_id, raw_record.available_at, "ASOF_MAXIMUM_DECLARED_ORDER", "DECLARED_PRICE", None, "ADJUSTED_EQUALS_RAW_TIMES_STORED_FACTOR"))
-            lineage.append(_line(code, date, "price_adj", "prices_adj", adj_digest, adj_record.revision_id, adj_record.available_at, "ASOF_MAXIMUM_DECLARED_ORDER", "DECLARED_PRICE", None, "ADJUSTED_EQUALS_RAW_TIMES_STORED_FACTOR"))
+            lineage.append(_line(code, date, "price_raw", "prices_raw", raw_digest, raw_record.revision_id, raw_record.available_at, "ASOF_MAXIMUM_DECLARED_ORDER", "DECLARED_PRICE", None, "ADJUSTED_EQUALS_RAW_TIMES_STORED_FACTOR", _source_key(raw_record, raw_key)))
+            lineage.append(_line(code, date, "price_adj", "prices_adj", adj_digest, adj_record.revision_id, adj_record.available_at, "ASOF_MAXIMUM_DECLARED_ORDER", "DECLARED_PRICE", None, "ADJUSTED_EQUALS_RAW_TIMES_STORED_FACTOR", _source_key(adj_record, adj_key)))
         else:
             if date in price_dates:
-                _note("prices", "price", key)
+                _note("prices", "price", key, "EXCLUDED_NOT_USABLE_AT_CUTOFF")
             row.update(price_status="UNKNOWN", price_available_at=pd.NA, price_revision_id="", amount_derivation="LATE_OR_UNKNOWN_PRICE")
             lineage.append(_line(code, date, "price_raw", "prices_raw", raw_digest, None, None, "EXCLUDED_NOT_USABLE_AT_CUTOFF", "DECLARED_PRICE", None, "LATE_OR_UNKNOWN_PRICE"))
         if role != "HALT":
             value, available, unit, derivation, scale, source = _daily_value(key, amount_map, amount_source, date in amount_dates, "amount", "amount_cny", amount_unit, "amount_cny")
             row.update(amount_cny=value if value is not None else pd.NA, amount_available_at=available if available else pd.NA, amount_unit=unit or "", amount_derivation=derivation)
             if source is not None and derivation == "POLICY_UNIT_FACTOR":
-                lineage.append(_line(code, date, "amount", "amount", amount_digest, source.revision_id, source.available_at, "ASOF_MAXIMUM_DECLARED_ORDER", unit, scale, derivation))
+                lineage.append(_line(code, date, "amount", "amount", amount_digest, source.revision_id, source.available_at, "ASOF_MAXIMUM_DECLARED_ORDER", unit, scale, derivation, _source_key(source, amount_key)))
             elif derivation != "NOT_REQUIRED":
                 lineage.append(_line(code, date, "amount", "amount", amount_digest, None, None, derivation, unit, scale, derivation))
         value, available, unit, derivation, scale, source = _daily_value(key, circ_map, circ_source, date in industry_dates, "circ_mv", "circ_mv_cny", circ_unit, "circ_mv_cny")
         row.update(circ_mv_cny=value if value is not None else pd.NA, basic_available_at=available if available else pd.NA, circ_mv_unit=unit or "")
         if source is not None and derivation == "POLICY_UNIT_FACTOR":
-            lineage.append(_line(code, date, "circ_mv", "circ_mv", circ_digest, source.revision_id, source.available_at, "ASOF_MAXIMUM_DECLARED_ORDER", unit, scale, derivation))
+            lineage.append(_line(code, date, "circ_mv", "circ_mv", circ_digest, source.revision_id, source.available_at, "ASOF_MAXIMUM_DECLARED_ORDER", unit, scale, derivation, _source_key(source, circ_key)))
         elif derivation != "NOT_REQUIRED":
             lineage.append(_line(code, date, "circ_mv", "circ_mv", circ_digest, None, None, derivation, unit, scale, derivation))
-        for label, grouped, value_name, known_name, flag_name, digest, required in (
-            ("membership", membership_at, "is_member", "membership_known", "is_member", membership_digest, date in membership_dates),
-            ("st", st_at, "is_st", "st_known", "is_st", st_digest, date in membership_dates),
-            ("industry", industry_at, "industry_code", None, None, industry_digest, date in industry_dates),
+        for label, grouped, value_name, known_name, flag_name, digest, columns, required in (
+            ("membership", membership_at, "is_member", "membership_known", "is_member", membership_digest, membership_key, date in membership_dates),
+            ("st", st_at, "is_st", "st_known", "is_st", st_digest, st_key, date in membership_dates),
+            ("industry", industry_at, "industry_code", None, None, industry_digest, industry_key, date in industry_dates),
         ):
+            table_name = "st_status" if label == "st" else label
             chosen = _choose_interval(grouped[date].get(code, []), date) if required or code in grouped[date] else None
+            if label == "industry":
+                _apply_industry(row, lineage, code, date, key, chosen, required, digest, columns)
+                continue
             if not required and chosen is None:
-                lineage.append(_line(code, date, label, label if label != "st" else "st_status", digest, None, None, "NOT_REQUIRED", None, None, "NOT_REQUIRED"))
+                lineage.append(_line(code, date, label, table_name, digest, None, None, "NOT_REQUIRED", None, None, "NOT_REQUIRED"))
                 continue
             if chosen is None or chosen.fact_status == "UNKNOWN":
+                reason = "EXPLICIT_UNKNOWN" if chosen is not None else "LATE_EXCLUDED"
                 if required:
-                    _note("membership_st" if label != "industry" else "industry_circ_mv", label, key)
-                lineage.append(_line(code, date, label, label if label != "st" else "st_status", digest, None, None, "EXPLICIT_UNKNOWN" if chosen is not None else "LATE_EXCLUDED", None, None, "FIELD_UNKNOWN"))
+                    _note("membership_st", label, key, reason)
+                primary = "" if chosen is None else _source_key(chosen, columns)
+                lineage.append(_line(code, date, label, table_name, digest, None if chosen is None else chosen.revision_id, None if chosen is None else chosen.available_at, reason, None, None, "FIELD_UNKNOWN", primary))
                 continue
             end = _optional_int(chosen.effective_to)
             inside = int(chosen.effective_from) <= date and (end is None or date <= end)
             available = _stamp(chosen.available_at)
-            if label == "industry":
-                row.update(industry_code=chosen.industry_code if inside and not _blank(chosen.industry_code) else pd.NA, industry_available_at=available, industry_effective_from=int(chosen.effective_from), industry_effective_to=end if end is not None else pd.NA)
-            else:
-                flag = bool(getattr(chosen, value_name)) if inside else False
-                if not _is_bool(getattr(chosen, value_name)):
-                    require_real_bools(pd.DataFrame({value_name: [getattr(chosen, value_name)]}), [value_name])
-                row.update({known_name: True, flag_name: flag, f"{label}_available_at": available, f"{label}_effective_from": int(chosen.effective_from), f"{label}_effective_to": end if end is not None else pd.NA})
-            lineage.append(_line(code, date, label, label if label != "st" else "st_status", digest, chosen.revision_id, chosen.available_at, "ASOF_MAXIMUM_DECLARED_ORDER", None, None, "CLOSED_CLOSED_INTERVAL"))
+            flag = bool(getattr(chosen, value_name)) if inside else False
+            if not _is_bool(getattr(chosen, value_name)):
+                require_real_bools(pd.DataFrame({value_name: [getattr(chosen, value_name)]}), [value_name])
+            row.update({known_name: True, flag_name: flag, f"{label}_available_at": available, f"{label}_effective_from": int(chosen.effective_from), f"{label}_effective_to": end if end is not None else pd.NA})
+            lineage.append(_line(code, date, label, table_name, digest, chosen.revision_id, chosen.available_at, "ASOF_MAXIMUM_DECLARED_ORDER", None, None, "CLOSED_CLOSED_INTERVAL", _source_key(chosen, columns)))
         panel_rows.append(row)
 
     panel = _canonicalize_panel(pd.DataFrame(panel_rows))
@@ -520,12 +603,14 @@ def normalize_package(package: SourcePackage, contract: Contract, policy: Snapsh
     outside_amount = len(expected) - len({(code, date) for code, date in expected if date in amount_dates})
     coverage = {
         "schema": COVERAGE_SCHEMA,
+        "coverage_rule": "VALUE_AND_EFFECTIVE_INTERVAL",
         "expected_keys": len(expected),
         "actual_keys": len(panel),
         "duplicate_keys": 0,
         "missing_keys": [],
         "extra_keys": [],
         "unknown_state_count": len(unknown_keys),
+        "field_gaps": sorted(field_gaps, key=lambda item: (item["trade_date"], item["ts_code"], item["field"], item["reason"])),
         "consumers": {
             "prices": _consumer_count(len(expected), field_unknown["prices"], 0),
             "amount_adv20": _consumer_count(len(codes) * len(amount_dates), field_unknown["amount_adv20"], outside_amount),
@@ -541,7 +626,8 @@ def normalize_package(package: SourcePackage, contract: Contract, policy: Snapsh
         "integrity_status": "PRE_COMMIT_CHECK",
         "source_authority": package.authority,
         "coverage_status": "PARTIAL" if unknown_keys else "COMPLETE",
-        "reasons": [] if not unknown_keys else [{"code": "FIELD_UNKNOWN", "fields": sorted(unknown_fields)}],
+        "coverage_rule": "VALUE_AND_EFFECTIVE_INTERVAL",
+        "reasons": sorted({item["reason"] for item in field_gaps}),
         "affected_fields": sorted(unknown_fields),
         "affected_dates": sorted({date for _, date in unknown_keys}),
         "affected_codes": sorted({code for code, _ in unknown_keys}),
@@ -700,17 +786,18 @@ def build_snapshot(manifest_path: Path, *, contract: Contract, policy: SnapshotP
     if mode not in {"SYNTHETIC", "REAL"}:
         raise GateError("SNAPSHOT_MODE_MISMATCH", mode)
     allowed = [manifest_path.parent.resolve()]
-    package = load_source_package(manifest_path, policy=policy, contract=contract, allowed_roots=allowed)
-    if package.manifest["mode"] != mode:
-        raise GateError("SNAPSHOT_MODE_MISMATCH", {"manifest": package.manifest["mode"], "command": mode})
-    if mode != "SYNTHETIC" or package.authority != "SYNTHETIC_DECLARATION":
-        raise GateError("REVIEW_RECEIPT_UNTRUSTED", "NO_REAL_GRANT")
-    _refuse_output(root, package.input_root)
     source_hash = file_hash(manifest_path)
-    receipt_path = package.input_root / package.manifest["review_receipt_ref"]
-    receipt_hash = file_hash(receipt_path)
     folder = None
+    package = None
     try:
+        package = load_source_package(manifest_path, policy=policy, contract=contract, allowed_roots=allowed)
+        if package.manifest["mode"] != mode:
+            raise GateError("SNAPSHOT_MODE_MISMATCH", {"manifest": package.manifest["mode"], "command": mode})
+        if mode != "SYNTHETIC" or package.authority != "SYNTHETIC_DECLARATION":
+            raise GateError("REVIEW_RECEIPT_UNTRUSTED", "NO_REAL_GRANT")
+        _refuse_output(root, package.input_root)
+        receipt_path = package.input_root / package.manifest["review_receipt_ref"]
+        receipt_hash = file_hash(receipt_path)
         normalized = normalize_package(package, contract, policy)
         identity = _identity(package, contract, policy, source_hash, receipt_hash, normalized)
         snapshot_id = fingerprint(identity)
@@ -744,7 +831,8 @@ def build_snapshot(manifest_path: Path, *, contract: Contract, policy: SnapshotP
         return BuiltSnapshot(folder, manifest, normalized["panel"], normalized["roster"], normalized["calendar"], normalized["lineage"], normalized["coverage"], normalized["gate"])
     except GateError as error:
         if folder is None:
-            folder, _ = create_run(contract, "build_snapshot", _input_files(manifest_path, package, policy, oracle_files or []), root=root, logical_inputs={"mode": mode, "schema": SNAPSHOT_SCHEMA, "source_manifest_sha256": source_hash, "blocked": error.code})
+            inputs = [manifest_path] if package is None else _input_files(manifest_path, package, policy, oracle_files or [])
+            folder, _ = create_run(contract, "build_snapshot", inputs, root=root, logical_inputs={"mode": mode, "schema": SNAPSHOT_SCHEMA, "source_manifest_sha256": source_hash, "blocked": error.code})
         _blocked(folder, error)
         details = error.details if isinstance(error.details, dict) else {"details": error.details}
         raise GateError(error.code, {**_jsonable(details), "artifact_dir": str(folder)}) from error

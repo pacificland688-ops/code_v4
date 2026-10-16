@@ -356,7 +356,12 @@ def test_input_mutation_during_smoke_rejects_acceptance(tmp_path, policy, parent
     assert payload["outcomes_generated"] is False
 
 
-def test_unavailable_industry_makes_matching_unevaluable_without_replacing_controls(tmp_path, policy, parent):
+def test_unavailable_industry_makes_matching_unevaluable_without_replacing_controls(monkeypatch, tmp_path, policy, parent):
+    def forbidden(*args, **kwargs):
+        del args, kwargs
+        raise AssertionError("partial industry coverage must not drive the smoke engine")
+
+    monkeypatch.setattr("momentum_pullback.data_gate.build_events", forbidden)
     tables, dates = hand_tables(2.0)
     for row in tables["industry"]:
         row["effective_from"] = 20180108
@@ -364,21 +369,35 @@ def test_unavailable_industry_makes_matching_unevaluable_without_replacing_contr
     contract = hand_contract(parent)
     manifest = commit_tables(tmp_path / "src", tables, policy=policy, contract=contract, parent_hash=parent.hash, case_id="B-MATCH")
     checked = build_checked_snapshot(manifest, contract=contract, policy=policy, mode="SYNTHETIC", root=tmp_path / "build")
-    assert checked.gate["status"] == "SYNTHETIC_SNAPSHOT_READY"
+    assert checked.gate["status"] == "SYNTHETIC_SNAPSHOT_PARTIAL"
+    assert checked.gate["coverage_status"] == "PARTIAL"
+    assert checked.coverage["unknown_state_count"] > 0
+    assert "NOT_YET_EFFECTIVE" in {item["reason"] for item in checked.coverage["field_gaps"] if item["field"] == "industry"}
     signal = checked.panel.loc[checked.panel.trade_date.eq(20180102)].iloc[0]
-    assert bool(signal.price_status == "TRADED")
+    assert signal.price_status == "TRADED"
     assert pd.isna(signal.industry_code)
-    folder, summary = run_snapshot_smoke(checked.folder / "snapshot_manifest.json", contract=contract, policy=policy, mode="SYNTHETIC", root=tmp_path / "smoke")
-    assert summary["data_status"] == "SYNTHETIC_SNAPSHOT_READY"
-    assert summary["event_status"] == "EVENTS_BUILT"
-    assert summary["status"] == "MATCHING_UNEVALUABLE"
-    assert summary["matching_status"] == "MATCHING_UNEVALUABLE"
-    assert summary["controls"] == 0
-    assert summary["unknown_identity_rows"] == 0
-    assert "MATCH_INFORMATION_UNAVAILABLE_AT_CUTOFF" in summary["failure_reasons"]
-    assert pd.read_parquet(folder / "matching_matches.parquet").empty
-    failures = pd.read_parquet(folder / "matching_failures.parquet")
-    assert set(failures.reason) == {"MATCH_INFORMATION_UNAVAILABLE_AT_CUTOFF"}
+    _folder, summary = run_snapshot_smoke(checked.folder / "snapshot_manifest.json", contract=contract, policy=policy, mode="SYNTHETIC", root=tmp_path / "smoke")
+    assert summary["status"] == "SYNTHETIC_SNAPSHOT_PARTIAL"
+    assert summary["accepted"] is False
+    assert summary["status"] != "SYNTHETIC_ENGINEERING_PASS"
+    assert not list(tmp_path.rglob("acceptance_summary.json"))
+    calendar = [int(value) for value in checked.calendar.trade_date.tolist()]
+    filled = checked.panel.copy()
+    filled["industry_code"] = "SYNTHETIC_INDUSTRY"
+    blank_features = build_features(checked.panel, calendar, contract, roster=checked.roster)
+    filled_features = build_features(filled, calendar, contract, roster=checked.roster)
+    compared = ["ts_code", "trade_date", "adj_close", "ema21", "ema50", "valid_observations", "price_status"]
+    pd.testing.assert_frame_equal(blank_features[compared].reset_index(drop=True), filled_features[compared].reset_index(drop=True), check_dtype=False)
+    from momentum_pullback.event_engine import build_events as engine_events
+    from momentum_pullback.matching import lock_matches
+    blank_events = engine_events(blank_features, contract)
+    filled_events = engine_events(filled_features, contract)
+    event_cols = ["ts_code", "signal_date", "root_date", "touch_no"]
+    pd.testing.assert_frame_equal(blank_events["events"][event_cols].reset_index(drop=True), filled_events["events"][event_cols].reset_index(drop=True), check_dtype=False)
+    assert len(blank_events["roots"]) == len(filled_events["roots"]) == 4
+    paired = lock_matches(blank_events["events"], blank_features, blank_events["observations"], contract)
+    assert paired["status"] == "MATCHING_UNEVALUABLE"
+    assert paired["matches"].empty
 
 
 def test_real_read_stays_blocked_and_validation_does_not_rewrite_the_snapshot(tmp_path, policy, parent):
