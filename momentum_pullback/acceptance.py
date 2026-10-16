@@ -61,3 +61,10 @@ def run_hand_acceptance(contract: Contract, *, root: Path = ROOT) -> tuple[Path,
     write_json(folder / "artifacts.json", [{"path": path.name, "sha256": file_hash(path)} for path in sorted(folder.iterdir()) if path.is_file()])
     verify_run_inputs(manifest)
     return folder, summary
+
+
+def run_snapshot_acceptance(manifest_path: Path, contract: Contract, *, policy, mode: str, root: Path = ROOT, offline: bool = False, outcomes_disabled: bool = False, before_accept=None) -> tuple[Path, dict]:
+    """Read a validated snapshot and drive the existing engine. The hand panel is not rebuilt."""
+    from momentum_pullback.data_gate import run_snapshot_smoke
+
+    return run_snapshot_smoke(manifest_path, contract=contract, policy=policy, mode=mode, root=root, offline=offline, outcomes_disabled=outcomes_disabled, before_accept=before_accept)
