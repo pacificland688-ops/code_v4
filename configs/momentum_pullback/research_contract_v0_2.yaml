@@ -98,4 +98,4 @@ documents:
 - path: momentum_pullback/engineering_contract_v0_2_r2.md
   sha256: 4d3de319980f4afdca1e063cd52b6f9f0b3b8f10b551d3ea0fa7e606084770f5
 - path: momentum_pullback/engineering_contract_v0_2_r3.md
-  sha256: 49ef4dbd3e5c425cf5d415bc34a21d79d1a899e747aa84efde84c02dad16df15
+  sha256: e772cb87240b8f7463001bed23a6bc0d26e837baeacad10931ee871b130684d0

@@ -321,8 +321,38 @@ def _artifact_destinations(root: Path, evidence: Path) -> dict[str, Path]:
     }
 
 
+def _rollback_verified_creations(created: list[str], destinations: dict[str, Path], expected_hash: dict[str, str]) -> None:
+    """Remove only files this attempt created whose bytes still match the staged identity."""
+    unverified = []
+    for name in reversed(created):
+        path = destinations[name]
+        if not path.is_file():
+            continue
+        try:
+            actual = file_hash(path)
+        except OSError:
+            unverified.append(name)
+            continue
+        if actual != expected_hash[name]:
+            unverified.append(name)
+            continue
+        try:
+            path.unlink()
+        except OSError:
+            unverified.append(name)
+    if unverified:
+        raise GateError("PUBLISH_ROLLBACK_INCOMPLETE", sorted(unverified))
+
+
 def _publish_artifact_set(staged: dict[str, Path], destinations: dict[str, Path]) -> dict[str, str]:
-    """Publish the five artifacts together. A conflicting rerun must not replace any of them."""
+    """Publish the five artifacts together, or leave every previous byte untouched.
+
+    An existing complete set is returned only when every hash matches. A conflicting
+    or incomplete set is refused before any replacement. A first publish that raises
+    a catchable I/O error removes only files this attempt created, and only while
+    their bytes still match the staged hash. Files whose identity cannot be checked
+    stay on disk, and a later run must not fill the hole.
+    """
     new_hash = {name: file_hash(path) for name, path in staged.items()}
     present = {name: path.is_file() for name, path in destinations.items()}
     if any(present.values()):
@@ -332,9 +362,22 @@ def _publish_artifact_set(staged: dict[str, Path], destinations: dict[str, Path]
         if old_hash != new_hash:
             raise GateError("ARTIFACT_ALREADY_EXISTS", sorted(name for name in old_hash if old_hash[name] != new_hash[name]))
         return old_hash
-    for name, path in destinations.items():
-        path.parent.mkdir(parents=True, exist_ok=True)
-        os.replace(staged[name], path)
+    created: list[str] = []
+    try:
+        for name, path in destinations.items():
+            if path.exists():
+                raise OSError(f"destination appeared before this publish step: {name}")
+            path.parent.mkdir(parents=True, exist_ok=True)
+            os.replace(staged[name], path)
+            created.append(name)
+            if file_hash(path) != new_hash[name]:
+                raise OSError(f"published bytes do not match staged identity: {name}")
+    except OSError as error:
+        try:
+            _rollback_verified_creations(created, destinations, new_hash)
+        except GateError as rollback_error:
+            raise rollback_error from error
+        raise GateError("PUBLISH_INTERRUPTED", str(error)) from error
     return new_hash
 
 
